@@ -1,8 +1,9 @@
-'use strict';
+"use strict";
 
-var gulp = require('gulp'),
-    runSequence = require('run-sequence');
+const gulp = require("gulp"),
+	runSequence = require("gulp4-run-sequence");
 
-gulp.task('default', function(callback) {
-    runSequence('clean', 'images', 'scripts', 'styles', 'node_modules', 'connect', 'watch', callback);
+gulp.task("default", function (callback) {
+	// The "clean" task has been removed because it doesn't work well with gulp4-run-sequence.
+	runSequence("images", "scripts", "styles", "node_modules", "connect", "watch", callback);
 });

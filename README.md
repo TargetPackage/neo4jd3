@@ -17,16 +17,15 @@
 - Highlight nodes on init.
 - Relationship auto-orientation.
 - Zoom, pan, auto fit.
-- Compatible with D3.js v4.
+- Compatible with D3.js v6.
 
 ## Running
 
-First of all, make sure you have ruby and sass gem installed. Then, clone the repository, install all dependencies, build and serve the project.
+Clone the repository, install all dependencies, build and serve the project.
 
 ```bash
-> gem install sass
-> git clone https://github.com/eisman/neo4jd3.git
-> npm install
+> git clone https://github.com/TargetPackage/neo4jd3.git
+> pnpm install
 > gulp
 ```
 

@@ -65,7 +65,7 @@ function Neo4jD3(_selector, _options) {
 
 					svg.attr(
 						"transform",
-						"translate(" + translate[0] + ", " + translate[1] + ") scale(" + scale + ")"
+						`translate(${translate[0]}, ${translate[1]}) scale(${scale})`
 					);
 				})
 			)
@@ -104,7 +104,7 @@ function Neo4jD3(_selector, _options) {
 	}
 
 	function appendInfoElement(cls, isNode, property, value) {
-		var elem = info.append("a");
+		const elem = info.append("a");
 
 		elem
 			.attr("href", "#")
@@ -186,7 +186,7 @@ function Neo4jD3(_selector, _options) {
 				}
 			})
 			.on("dblclick", function (event, d) {
-				stickNode(d);
+				stickNode(event, d);
 
 				if (typeof options.onNodeDoubleClick === "function") {
 					options.onNodeDoubleClick(d);
@@ -415,7 +415,7 @@ function Neo4jD3(_selector, _options) {
 	}
 
 	function dragged(event, d) {
-		stickNode(d);
+		stickNode(event, d);
 	}
 
 	function dragStarted(event, d) {
@@ -1388,9 +1388,9 @@ function Neo4jD3(_selector, _options) {
 		};
 	}
 
-	function stickNode(d) {
-		d.fx = d.x;
-		d.fy = d.y;
+	function stickNode(event, d) {
+		d.fx = event.x;
+		d.fy = event.y;
 	}
 
 	function tick() {
@@ -1410,7 +1410,7 @@ function Neo4jD3(_selector, _options) {
 		if (relationship) {
 			relationship.attr("transform", function (d) {
 				const angle = rotation(d.source, d.target);
-				return "translate(" + d.source.x + ", " + d.source.y + ") rotate(" + angle + ")";
+				return `translate(${d.source.x}, ${d.source.y}) rotate(${angle})`;
 			});
 
 			tickRelationshipsTexts();
@@ -1421,9 +1421,9 @@ function Neo4jD3(_selector, _options) {
 
 	function tickRelationshipsOutlines() {
 		relationship.each(function (relationship) {
-			var rel = d3.select(this),
-				outline = rel.select(".outline"),
-				text = rel.select(".text");
+			const rel = d3.select(this);
+			const outline = rel.select(".outline");
+			const text = rel.select(".text");
 
 			outline.attr("d", function (d) {
 				var center = { x: 0, y: 0 },
@@ -1655,13 +1655,8 @@ function Neo4jD3(_selector, _options) {
 			const rotatedPoint = rotatePoint(center, point, angle);
 
 			return (
-				"translate(" +
-				rotatedPoint.x +
-				", " +
-				rotatedPoint.y +
-				") rotate(" +
-				(mirror ? 180 : 0) +
-				")"
+				`translate(${rotatedPoint.x}, ${rotatedPoint.y})` +
+				`rotate(${mirror ? 180 : 0})`
 			);
 		});
 	}
@@ -1759,14 +1754,14 @@ function Neo4jD3(_selector, _options) {
 	}
 
 	function zoomFit(transitionDuration) {
-		var bounds = svg.node().getBBox(),
-			parent = svg.node().parentElement.parentElement,
-			fullWidth = parent.clientWidth,
-			fullHeight = parent.clientHeight,
-			width = bounds.width,
-			height = bounds.height,
-			midX = bounds.x + width / 2,
-			midY = bounds.y + height / 2;
+		const bounds = svg.node().getBBox();
+		const parent = svg.node().parentElement.parentElement;
+		const fullWidth = parent.clientWidth;
+		const fullHeight = parent.clientHeight;
+		const width = bounds.width;
+		const height = bounds.height;
+		const midX = bounds.x + width / 2;
+		const midY = bounds.y + height / 2;
 
 		if (width === 0 || height === 0) {
 			// nothing to fit
@@ -1778,7 +1773,7 @@ function Neo4jD3(_selector, _options) {
 
 		svg.attr(
 			"transform",
-			"translate(" + svgTranslate[0] + ", " + svgTranslate[1] + ") scale(" + svgScale + ")"
+			`translate(${svgTranslate[0]}, ${svgTranslate[1]}) scale(${svgScale})`
 		);
 	}
 

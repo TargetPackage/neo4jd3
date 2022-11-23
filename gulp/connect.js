@@ -1,8 +1,8 @@
 "use strict";
 
-const conf = require("./conf"),
-	connect = require("gulp-connect"),
-	gulp = require("gulp");
+const conf = require("./conf");
+const connect = require("gulp-connect");
+const gulp = require("gulp");
 
 gulp.task("connect", function () {
 	connect.server({

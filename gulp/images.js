@@ -1,9 +1,9 @@
 "use strict";
 
-const conf = require("./conf"),
-	connect = require("gulp-connect"),
-	gulp = require("gulp"),
-	imagemin = require("gulp-imagemin");
+const conf = require("./conf");
+const connect = require("gulp-connect");
+const gulp = require("gulp");
+const imagemin = require("gulp-imagemin");
 
 gulp.task("images", function () {
 	return gulp

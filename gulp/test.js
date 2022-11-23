@@ -6,7 +6,7 @@ const gulp = require("gulp"),
 process.env.NODE_PATH = process.cwd();
 
 gulp.task("test:client", function (done) {
-	var configFile = require("path").resolve("karma.conf.js");
+	const configFile = require("path").resolve("karma.conf.js");
 
 	new Server(
 		{

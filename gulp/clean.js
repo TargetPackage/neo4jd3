@@ -1,8 +1,8 @@
 "use strict";
 
-const conf = require("./conf"),
-	del = require("del"),
-	gulp = require("gulp");
+const conf = require("./conf");
+const del = require("del");
+const gulp = require("gulp");
 
 gulp.task("clean", function () {
 	return del([

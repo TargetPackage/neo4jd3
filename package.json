@@ -2,7 +2,6 @@
 	"name": "@targetpackage/neo4jd3",
 	"version": "1.0.0",
 	"description": "Neo4jD3",
-	"main": "dist/neo4jd3.min.js",
 	"bugs": {
 		"url": "https://github.com/TargetPackage/neo4jd3/issues"
 	},

@@ -1,12 +1,12 @@
 "use strict";
 
-const autoprefixer = require("gulp-autoprefixer"),
-	conf = require("./conf"),
-	connect = require("gulp-connect"),
-	cssnano = require("gulp-cssnano"),
-	gulp = require("gulp"),
-	rename = require("gulp-rename"),
-	sass = require("gulp-sass")(require("sass"));
+const autoprefixer = require("gulp-autoprefixer");
+const conf = require("./conf");
+const connect = require("gulp-connect");
+const cssnano = require("gulp-cssnano");
+const gulp = require("gulp");
+const rename = require("gulp-rename");
+const sass = require("gulp-sass")(require("sass"));
 
 gulp.task("styles:build", async function () {
 	return sass("src/main/styles/neo4jd3.scss", { style: "expanded" })

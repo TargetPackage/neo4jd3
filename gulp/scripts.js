@@ -1,24 +1,24 @@
 "use strict";
 
-const _ = require("lodash"),
-	browserify = require("browserify"),
-	buffer = require("vinyl-buffer"),
-	c = require("ansi-colors"),
-	concat = require("gulp-concat"),
-	conf = require("./conf"),
-	connect = require("gulp-connect"),
-	derequire = require("gulp-derequire"),
-	gulp = require("gulp"),
-	gulpif = require("gulp-if"),
-	jshint = require("gulp-jshint"),
-	log = require("fancy-log"),
-	notifier = require("node-notifier"),
-	path = require("path"),
-	plumber = require("gulp-plumber"),
-	rename = require("gulp-rename"),
-	source = require("vinyl-source-stream"),
-	uglify = require("gulp-uglify"),
-	watchify = require("watchify");
+const _ = require("lodash");
+const browserify = require("browserify");
+const buffer = require("vinyl-buffer");
+const c = require("ansi-colors");
+const concat = require("gulp-concat");
+const conf = require("./conf");
+const connect = require("gulp-connect");
+const derequire = require("gulp-derequire");
+const gulp = require("gulp");
+const gulpif = require("gulp-if");
+const jshint = require("gulp-jshint");
+const log = require("fancy-log");
+const notifier = require("node-notifier");
+const path = require("path");
+const plumber = require("gulp-plumber");
+const rename = require("gulp-rename");
+const source = require("vinyl-source-stream");
+const uglify = require("gulp-uglify");
+const watchify = require("watchify");
 
 gulp.task("scripts:external", function () {
 	return gulp
@@ -59,13 +59,11 @@ gulp.task("scripts", gulp.series("scripts:external", "scripts:internal"), functi
 
 function buildScript(filename, mode) {
 	const bundleFilename = "index.js";
-
-	var browserifyConfig = {
+	const browserifyConfig = {
 		standalone: "Neo4jd3"
 	};
 
-	var bundler;
-
+	let bundler;
 	if (mode === "dev") {
 		bundler = browserify(filename, _.extend(browserifyConfig, { debug: true }));
 	} else if (mode === "prod") {
@@ -82,7 +80,7 @@ function buildScript(filename, mode) {
 	}
 
 	function rebundle() {
-		var stream = bundler.bundle().on("error", function (err) {
+		const stream = bundler.bundle().on("error", function (err) {
 			error.call(this, err);
 		});
 

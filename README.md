@@ -2,7 +2,7 @@
 
 [Neo4j](https://github.com/neo4j) graph visualization using [D3.js](https://github.com/d3/d3).
 
-![neo3jd3.js](https://eisman.github.io/neo4jd3/img/neo4jd3.jpg?v=0.0.5)
+![neo3jd3.js](https://targetpackage.github.io/neo4jd3/img/neo4jd3.jpg?v=0.0.5)
 
 ## Features
 
@@ -81,7 +81,7 @@ const neo4jd3 = new Neo4jd3(".selector", options);
             "id": "1",
             "labels": ["User"],
             "properties": {
-                "userId": "eisman"
+                "userId": "TargetPackage"
             }
         },
         {
@@ -91,7 +91,7 @@ const neo4jd3 = new Neo4jd3(".selector", options);
                 "name": "neo4jd3",
                 "title": "neo4jd3.js",
                 "description": "Neo4j graph visualization using D3.js.",
-                "url": "https://eisman.github.io/neo4jd3"
+                "url": "https://targetpackage.github.io/neo4jd3"
             }
         }
     ],
@@ -127,7 +127,7 @@ const neo4jd3 = new Neo4jd3(".selector", options);
                                 "id": "1",
                                 "labels": ["User"],
                                 "properties": {
-                                    "userId": "eisman"
+                                    "userId": "TargetPackage"
                                 }
                             },
                             {
@@ -137,7 +137,7 @@ const neo4jd3 = new Neo4jd3(".selector", options);
                                     "name": "neo4jd3",
                                     "title": "neo4jd3.js",
                                     "description": "Neo4j graph visualization using D3.js.",
-                                    "url": "https://eisman.github.io/neo4jd3"
+                                    "url": "https://targetpackage.github.io/neo4jd3"
                                 }
                             }
                         ],
@@ -163,7 +163,7 @@ const neo4jd3 = new Neo4jd3(".selector", options);
 
 ### Example
 
-Live example @ [https://eisman.github.io/neo4jd3/](https://eisman.github.io/neo4jd3/)
+Live example @ [https://targetpackage.github.io/neo4jd3/](https://targetpackage.github.io/neo4jd3/)
 
 ```javascript
 const neo4jd3 = new Neo4jd3("#neo4jd3", {
@@ -176,7 +176,7 @@ const neo4jd3 = new Neo4jd3("#neo4jd3", {
 		{
 			class: "User",
 			property: "userId",
-			value: "eisman"
+			value: "TargetPackage"
 		}
 	],
 	icons: {

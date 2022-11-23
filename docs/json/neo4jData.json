@@ -10,7 +10,7 @@
 								"id": "1",
 								"labels": ["User"],
 								"properties": {
-									"userId": "eisman"
+									"userId": "ajmeese7"
 								}
 							},
 							{
@@ -48,7 +48,7 @@
 								"id": "6",
 								"labels": ["Device"],
 								"properties": {
-									"value": "eisman"
+									"value": "ajmeese7"
 								}
 							},
 							{
@@ -65,21 +65,21 @@
 									"name": "neo4jd3",
 									"title": "neo4jd3.js",
 									"description": "Neo4j graph visualization using D3.js.",
-									"url": "https://eisman.github.io/neo4jd3"
+									"url": "https://targetpackage.github.io/neo4jd3"
 								}
 							},
 							{
 								"id": "9",
 								"labels": ["Git"],
 								"properties": {
-									"url": "https://github.com/eisman/neo4jd3"
+									"url": "https://github.com/TargetPackage/neo4jd3"
 								}
 							},
 							{
 								"id": "10",
 								"labels": ["Issues"],
 								"properties": {
-									"url": "https://github.com/eisman/neo4jd3/issues"
+									"url": "https://targetpackage.github.io/neo4jd3/issues"
 								}
 							},
 							{
@@ -113,7 +113,7 @@
 								"id": "14",
 								"labels": ["Email"],
 								"properties": {
-									"email": "eeisman@gmail.com"
+									"email": "contact@targetpackage.com"
 								}
 							},
 							{

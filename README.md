@@ -71,44 +71,43 @@ const neo4jd3 = new Neo4jd3(".selector", options);
 | **version**()                                         | Returns the version of neo4jd3.js.<br>Example: `'0.0.1'`                                                                                                        |
 
 ### Documentation
-
 #### D3.js data format
 
 ```
 {
-    "nodes": [
-        {
-            "id": "1",
-            "labels": ["User"],
-            "properties": {
-                "userId": "TargetPackage"
-            }
-        },
-        {
-            "id": "8",
-            "labels": ["Project"],
-            "properties": {
-                "name": "neo4jd3",
-                "title": "neo4jd3.js",
-                "description": "Neo4j graph visualization using D3.js.",
-                "url": "https://targetpackage.github.io/neo4jd3"
-            }
-        }
-    ],
-    "relationships": [
-        {
-            "id": "7",
-            "type": "DEVELOPES",
-            "startNode": "1",
-            "endNode": "8",
-            "properties": {
-                "from": 1470002400000
-            },
-            "source": "1",
-            "target": "8",
-            "linknum": 1
-        }
-    ]
+  "nodes": [
+    {
+      "id": "1",
+      "labels": ["User"],
+      "properties": {
+        "userId": "TargetPackage"
+      }
+    },
+    {
+      "id": "8",
+      "labels": ["Project"],
+      "properties": {
+        "name": "neo4jd3",
+        "title": "neo4jd3.js",
+        "description": "Neo4j graph visualization using D3.js.",
+        "url": "https://targetpackage.github.io/neo4jd3"
+      }
+    }
+  ],
+  "relationships": [
+    {
+      "id": "7",
+      "type": "DEVELOPS",
+      "startNode": "1",
+      "endNode": "8",
+      "properties": {
+        "from": 1470002400000
+      },
+      "source": "1",
+      "target": "8",
+      "linknum": 1
+    }
+  ]
 }
 ```
 
@@ -116,48 +115,48 @@ const neo4jd3 = new Neo4jd3(".selector", options);
 
 ```
 {
-    "results": [
+  "results": [
+    {
+      "columns": ["user", "entity"],
+      "data": [
         {
-            "columns": ["user", "entity"],
-            "data": [
-                {
-                    "graph": {
-                        "nodes": [
-                            {
-                                "id": "1",
-                                "labels": ["User"],
-                                "properties": {
-                                    "userId": "TargetPackage"
-                                }
-                            },
-                            {
-                                "id": "8",
-                                "labels": ["Project"],
-                                "properties": {
-                                    "name": "neo4jd3",
-                                    "title": "neo4jd3.js",
-                                    "description": "Neo4j graph visualization using D3.js.",
-                                    "url": "https://targetpackage.github.io/neo4jd3"
-                                }
-                            }
-                        ],
-                        "relationships": [
-                            {
-                                "id": "7",
-                                "type": "DEVELOPES",
-                                "startNode": "1",
-                                "endNode": "8",
-                                "properties": {
-                                    "from": 1470002400000
-                                }
-                            }
-                        ]
-                    }
+          "graph": {
+            "nodes": [
+              {
+                "id": "1",
+                "labels": ["User"],
+                "properties": {
+                  "userId": "TargetPackage"
                 }
+              },
+              {
+                "id": "8",
+                "labels": ["Project"],
+                "properties": {
+                  "name": "neo4jd3",
+                  "title": "neo4jd3.js",
+                  "description": "Neo4j graph visualization using D3.js.",
+                  "url": "https://targetpackage.github.io/neo4jd3"
+                }
+              }
+            ],
+            "relationships": [
+              {
+                "id": "7",
+                "type": "DEVELOPS",
+                "startNode": "1",
+                "endNode": "8",
+                "properties": {
+                  "from": 1470002400000
+                }
+              }
             ]
+          }
         }
-    ],
-    "errors": []
+      ]
+    }
+  ],
+  "errors": []
 }
 ```
 

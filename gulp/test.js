@@ -1,7 +1,8 @@
 "use strict";
 
-const gulp = require("gulp"),
-	Server = require("karma").Server;
+import gulp from "gulp";
+import karma from "karma";
+const Server = karma.Server;
 
 process.env.NODE_PATH = process.cwd();
 

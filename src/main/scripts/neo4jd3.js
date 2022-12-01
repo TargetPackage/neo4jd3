@@ -1,6 +1,7 @@
-/* global d3, document */
 /* jshint latedef:nofunc */
 "use strict";
+
+import * as d3 from "d3";
 
 function Neo4jD3(_selector, _options) {
 	var container,
@@ -40,9 +41,13 @@ function Neo4jD3(_selector, _options) {
 			nodeTextColor: "#ffffff",
 			relationshipColor: "#a5abb6",
 			zoomFit: false
-		},
-		VERSION = "0.0.1";
+		};
 
+	/**
+	 * Appends the generated graph to the element tied to the specified
+	 * selector in the DOM.
+	 * @param {HTMLElement} container The container element to append the graph to.
+	 */
 	function appendGraph(container) {
 		svg = container
 			.append("svg")
@@ -75,7 +80,6 @@ function Neo4jD3(_selector, _options) {
 			.attr("height", "100%");
 
 		svgRelationships = svg.append("g").attr("class", "relationships");
-
 		svgNodes = svg.append("g").attr("class", "nodes");
 	}
 
@@ -230,6 +234,11 @@ function Neo4jD3(_selector, _options) {
 		return n;
 	}
 
+	/**
+	 * Appends an outline (border) to the specified node.
+	 * @param {Object} node The node to append the outline to.
+	 * @returns {Object} The node with the appended outline.
+	 */
 	function appendOutlineToNode(node) {
 		return node
 			.append("circle")
@@ -251,6 +260,11 @@ function Neo4jD3(_selector, _options) {
 			});
 	}
 
+	/**
+	 * Appends a ring to the node that will be displayed when the node is hovered over.
+	 * @param {Object} node The node to append the ring to.
+	 * @returns {Object} The node with the ring appended.
+	 */
 	function appendRingToNode(node) {
 		return node
 			.append("circle")
@@ -310,10 +324,20 @@ function Neo4jD3(_selector, _options) {
 			});
 	}
 
+	/**
+	 * Appends an outline path to the specified relationship.
+	 * @param {Object} r The relationship object
+	 * @returns {Object} The relationship with an outline apppended
+	 */
 	function appendOutlineToRelationship(r) {
 		return r.append("path").attr("class", "outline").attr("fill", "#a5abb6").attr("stroke", "none");
 	}
 
+	/**
+	 * Appends an overlay path to the specified relationship.
+	 * @param {Object} r The relationship object
+	 * @returns {Object} The relationship with the overlay appended
+	 */
 	function appendOverlayToRelationship(r) {
 		return r.append("path").attr("class", "overlay");
 	}
@@ -365,6 +389,10 @@ function Neo4jD3(_selector, _options) {
 		info.html("");
 	}
 
+	/**
+	 * Returns the default colors used within the library.
+	 * @returns {Array} The default library colors
+	 */
 	function colors() {
 		return [
 			"#68bdf6", // light blue
@@ -1247,6 +1275,11 @@ function Neo4jD3(_selector, _options) {
 			});
 	}
 
+	/**
+	 * Helper function to merge the properties of two objects.
+	 * @param {Object} target The target object.
+	 * @param {Object} source The source object.
+	 */
 	function merge(target, source) {
 		Object.keys(source).forEach(function (property) {
 			target[property] = source[property];
@@ -1259,6 +1292,22 @@ function Neo4jD3(_selector, _options) {
 			relationships: []
 		};
 
+		// Detects if the data is in the format of the REST API or the Bolt driver
+		// and converts it to the d3 format
+		if (data?.results) {
+			return convertRESTDataToD3Data(graph, data);
+		} else {
+			return convertDriverDataToD3Data(graph, data);
+		}
+	}
+
+	/**
+	 * Converts data from the neo4j REST API format to the d3 format.
+	 * @link https://neo4j.com/developer/javascript/#js-http-endpoint
+	 * @param {{nodes: Array, relationships: Array}} graph
+	 * @param {Object} data
+	 */
+	function convertRESTDataToD3Data(graph, data) {
 		data.results.forEach(function (result) {
 			result.data.forEach(function (data) {
 				data.graph.nodes.forEach(function (node) {
@@ -1300,6 +1349,89 @@ function Neo4jD3(_selector, _options) {
 			});
 		});
 
+		return graph;
+	}
+
+	/**
+	 * Converts data from the neo4j JavaScript driver format to the d3 format.
+	 * @link https://neo4j.com/developer/javascript/#js-driver
+	 * @param {{nodes: Array, relationships: Array}} graph
+	 * @param {Object} data
+	 * @todo Define `data` type based on https://neo4j.com/developer/javascript/#js-http-endpoint
+	 */
+	function convertDriverDataToD3Data(graph, data) {
+		let nodes = [];
+		let relationships = [];
+
+		if (data.records) {
+			// Handle data that hasn't been mapped to `record.toObject()`
+			data.records.forEach(function (record) {
+				record._fields.forEach(function (field) {
+					if (field.identity) {
+						nodes.push(field);
+					} else if (field.start) {
+						relationships.push(field);
+					}
+				});
+			});
+		} else {
+			// Handle data that has already been mapped to `record.toObject()`
+			data.forEach(function (record) {
+				for (const key in record) {
+					const field = record[key];
+					if (field.start) {
+						relationships.push(field);
+					} else {
+						nodes.push(field);
+					}
+				};
+			});
+		}
+
+		const uniqueNodes = nodes.filter(
+			(e, i) => nodes.findIndex(a => a["elementId"] === e["elementId"]) === i
+		);
+		graph.nodes.push(...uniqueNodes);
+
+		const uniqueRelationships = relationships.filter(
+			(e, i) => relationships.findIndex(a =>
+				a["startNodeElementId"] === e["startNodeElementId"] &&
+				a["endNodeElementId"] === e["endNodeElementId"] &&
+				a["type"] === e["type"]
+			) === i
+		);
+		uniqueRelationships.forEach((relationship) => {
+			relationship.source = relationship.start;
+			relationship.target = relationship.end;
+		});
+		graph.relationships.push(...uniqueRelationships);
+
+		graph.relationships.sort(function (a, b) {
+			if (a.source > b.source) {
+				return 1;
+			} else if (a.source < b.source) {
+				return -1;
+			} else {
+				if (a.target > b.target) {
+					return 1;
+				}
+				return a.target < b.target ? -1 : 0;
+			}
+		});
+
+		for (let i = 0; i < graph.relationships.length; i++) {
+			if (
+				i !== 0 &&
+				graph.relationships[i].source === graph.relationships[i - 1].source &&
+				graph.relationships[i].target === graph.relationships[i - 1].target
+			) {
+				graph.relationships[i].linknum = graph.relationships[i - 1].linknum + 1;
+			} else {
+				graph.relationships[i].linknum = 1;
+			}
+		}
+
+		console.log("Graph: ", graph);
 		return graph;
 	}
 
@@ -1373,14 +1505,31 @@ function Neo4jD3(_selector, _options) {
 		return { x: nx, y: ny };
 	}
 
-	function rotatePoint(c, p, angle) {
-		return rotate(c.x, c.y, p.x, p.y, angle);
+	/**
+	 * Calls the `rotate` function on a specified point.
+	 * @param {Object} center The coordinates of the center of the rotation.
+	 * @param {Object} point The coordinates of the point to rotate.
+	 * @param {number} angle The angle to rotate the point by.
+	 * @returns {Object} The rotated point.
+	 */
+	function rotatePoint(center, point, angle) {
+		return rotate(center.x, center.y, point.x, point.y, angle);
 	}
 
+	/**
+	 * Calculates the rotation of a link between two nodes.
+	 * @param {Object} source The source node of the relationship.
+	 * @param {Object} target The target node of the relationship.
+	 * @returns {number} The angle of the link.
+	 */
 	function rotation(source, target) {
 		return (Math.atan2(target.y - source.y, target.x - source.x) * 180) / Math.PI;
 	}
 
+	/**
+	 * Calculates the size of the graphm i.e. the number of nodes and relationships.
+	 * @returns {{nodes: number, relationships: number}} The size of the graph.
+	 */
 	function size() {
 		return {
 			nodes: nodes.length,
@@ -1388,6 +1537,9 @@ function Neo4jD3(_selector, _options) {
 		};
 	}
 
+	/**
+	 * Removes any velocity from the specified node.
+	 */
 	function stickNode(event, d) {
 		d.fx = event.x;
 		d.fy = event.y;
@@ -1401,7 +1553,7 @@ function Neo4jD3(_selector, _options) {
 	function tickNodes() {
 		if (node) {
 			node.attr("transform", function (d) {
-				return "translate(" + d.x + ", " + d.y + ")";
+				return `translate(${d.x}, ${d.y})`;
 			});
 		}
 	}
@@ -1426,169 +1578,135 @@ function Neo4jD3(_selector, _options) {
 			const text = rel.select(".text");
 
 			outline.attr("d", function (d) {
-				var center = { x: 0, y: 0 },
-					angle = rotation(d.source, d.target),
-					textBoundingBox = text.node().getBBox(),
-					textPadding = 5,
-					u = unitaryVector(d.source, d.target),
-					textMargin = {
-						x: (d.target.x - d.source.x - (textBoundingBox.width + textPadding) * u.x) * 0.5,
-						y: (d.target.y - d.source.y - (textBoundingBox.width + textPadding) * u.y) * 0.5
+				const center = { x: 0, y: 0 };
+				const angle = rotation(d.source, d.target);
+				const textBoundingBox = text.node().getBBox();
+				const textPadding = 5;
+				const u = unitaryVector(d.source, d.target);
+				const textMargin = {
+					x: (d.target.x - d.source.x - (textBoundingBox.width + textPadding) * u.x) * 0.5,
+					y: (d.target.y - d.source.y - (textBoundingBox.width + textPadding) * u.y) * 0.5
+				};
+				const n = unitaryNormalVector(d.source, d.target);
+				const rotatedPointA1 = rotatePoint(
+					center,
+					{
+						x: 0 + (options.nodeRadius + 1) * u.x - n.x,
+						y: 0 + (options.nodeRadius + 1) * u.y - n.y
 					},
-					n = unitaryNormalVector(d.source, d.target),
-					rotatedPointA1 = rotatePoint(
-						center,
-						{
-							x: 0 + (options.nodeRadius + 1) * u.x - n.x,
-							y: 0 + (options.nodeRadius + 1) * u.y - n.y
-						},
-						angle
-					),
-					rotatedPointB1 = rotatePoint(
-						center,
-						{ x: textMargin.x - n.x, y: textMargin.y - n.y },
-						angle
-					),
-					rotatedPointC1 = rotatePoint(center, { x: textMargin.x, y: textMargin.y }, angle),
-					rotatedPointD1 = rotatePoint(
-						center,
-						{
-							x: 0 + (options.nodeRadius + 1) * u.x,
-							y: 0 + (options.nodeRadius + 1) * u.y
-						},
-						angle
-					),
-					rotatedPointA2 = rotatePoint(
-						center,
-						{
-							x: d.target.x - d.source.x - textMargin.x - n.x,
-							y: d.target.y - d.source.y - textMargin.y - n.y
-						},
-						angle
-					),
-					rotatedPointB2 = rotatePoint(
-						center,
-						{
-							x:
-								d.target.x -
-								d.source.x -
-								(options.nodeRadius + 1) * u.x -
-								n.x -
-								u.x * options.arrowSize,
-							y:
-								d.target.y -
-								d.source.y -
-								(options.nodeRadius + 1) * u.y -
-								n.y -
-								u.y * options.arrowSize
-						},
-						angle
-					),
-					rotatedPointC2 = rotatePoint(
-						center,
-						{
-							x:
-								d.target.x -
-								d.source.x -
-								(options.nodeRadius + 1) * u.x -
-								n.x +
-								(n.x - u.x) * options.arrowSize,
-							y:
-								d.target.y -
-								d.source.y -
-								(options.nodeRadius + 1) * u.y -
-								n.y +
-								(n.y - u.y) * options.arrowSize
-						},
-						angle
-					),
-					rotatedPointD2 = rotatePoint(
-						center,
-						{
-							x: d.target.x - d.source.x - (options.nodeRadius + 1) * u.x,
-							y: d.target.y - d.source.y - (options.nodeRadius + 1) * u.y
-						},
-						angle
-					),
-					rotatedPointE2 = rotatePoint(
-						center,
-						{
-							x:
-								d.target.x -
-								d.source.x -
-								(options.nodeRadius + 1) * u.x +
-								(-n.x - u.x) * options.arrowSize,
-							y:
-								d.target.y -
-								d.source.y -
-								(options.nodeRadius + 1) * u.y +
-								(-n.y - u.y) * options.arrowSize
-						},
-						angle
-					),
-					rotatedPointF2 = rotatePoint(
-						center,
-						{
-							x: d.target.x - d.source.x - (options.nodeRadius + 1) * u.x - u.x * options.arrowSize,
-							y: d.target.y - d.source.y - (options.nodeRadius + 1) * u.y - u.y * options.arrowSize
-						},
-						angle
-					),
-					rotatedPointG2 = rotatePoint(
-						center,
-						{
-							x: d.target.x - d.source.x - textMargin.x,
-							y: d.target.y - d.source.y - textMargin.y
-						},
-						angle
-					);
+					angle
+				);
+				const rotatedPointB1 = rotatePoint(
+					center,
+					{ x: textMargin.x - n.x, y: textMargin.y - n.y },
+					angle
+				);
+				const rotatedPointC1 = rotatePoint(center, { x: textMargin.x, y: textMargin.y }, angle);
+				const rotatedPointD1 = rotatePoint(
+					center,
+					{
+						x: 0 + (options.nodeRadius + 1) * u.x,
+						y: 0 + (options.nodeRadius + 1) * u.y
+					},
+					angle
+				);
+				const rotatedPointA2 = rotatePoint(
+					center,
+					{
+						x: d.target.x - d.source.x - textMargin.x - n.x,
+						y: d.target.y - d.source.y - textMargin.y - n.y
+					},
+					angle
+				);
+				const rotatedPointB2 = rotatePoint(
+					center,
+					{
+						x:
+							d.target.x -
+							d.source.x -
+							(options.nodeRadius + 1) * u.x -
+							n.x -
+							u.x * options.arrowSize,
+						y:
+							d.target.y -
+							d.source.y -
+							(options.nodeRadius + 1) * u.y -
+							n.y -
+							u.y * options.arrowSize
+					},
+					angle
+				);
+				const rotatedPointC2 = rotatePoint(
+					center,
+					{
+						x:
+							d.target.x -
+							d.source.x -
+							(options.nodeRadius + 1) * u.x -
+							n.x +
+							(n.x - u.x) * options.arrowSize,
+						y:
+							d.target.y -
+							d.source.y -
+							(options.nodeRadius + 1) * u.y -
+							n.y +
+							(n.y - u.y) * options.arrowSize
+					},
+					angle
+				);
+				const rotatedPointD2 = rotatePoint(
+					center,
+					{
+						x: d.target.x - d.source.x - (options.nodeRadius + 1) * u.x,
+						y: d.target.y - d.source.y - (options.nodeRadius + 1) * u.y
+					},
+					angle
+				);
+				const rotatedPointE2 = rotatePoint(
+					center,
+					{
+						x:
+							d.target.x -
+							d.source.x -
+							(options.nodeRadius + 1) * u.x +
+							(-n.x - u.x) * options.arrowSize,
+						y:
+							d.target.y -
+							d.source.y -
+							(options.nodeRadius + 1) * u.y +
+							(-n.y - u.y) * options.arrowSize
+					},
+					angle
+				);
+				const rotatedPointF2 = rotatePoint(
+					center,
+					{
+						x: d.target.x - d.source.x - (options.nodeRadius + 1) * u.x - u.x * options.arrowSize,
+						y: d.target.y - d.source.y - (options.nodeRadius + 1) * u.y - u.y * options.arrowSize
+					},
+					angle
+				);
+				const rotatedPointG2 = rotatePoint(
+					center,
+					{
+						x: d.target.x - d.source.x - textMargin.x,
+						y: d.target.y - d.source.y - textMargin.y
+					},
+					angle
+				);
 
 				return (
-					"M " +
-					rotatedPointA1.x +
-					" " +
-					rotatedPointA1.y +
-					" L " +
-					rotatedPointB1.x +
-					" " +
-					rotatedPointB1.y +
-					" L " +
-					rotatedPointC1.x +
-					" " +
-					rotatedPointC1.y +
-					" L " +
-					rotatedPointD1.x +
-					" " +
-					rotatedPointD1.y +
-					" Z M " +
-					rotatedPointA2.x +
-					" " +
-					rotatedPointA2.y +
-					" L " +
-					rotatedPointB2.x +
-					" " +
-					rotatedPointB2.y +
-					" L " +
-					rotatedPointC2.x +
-					" " +
-					rotatedPointC2.y +
-					" L " +
-					rotatedPointD2.x +
-					" " +
-					rotatedPointD2.y +
-					" L " +
-					rotatedPointE2.x +
-					" " +
-					rotatedPointE2.y +
-					" L " +
-					rotatedPointF2.x +
-					" " +
-					rotatedPointF2.y +
-					" L " +
-					rotatedPointG2.x +
-					" " +
-					rotatedPointG2.y +
-					" Z"
+					`M ${rotatedPointA1.x} ${rotatedPointA1.y} ` +
+					`L ${rotatedPointB1.x} ${rotatedPointB1.y} ` +
+					`L ${rotatedPointC1.x} ${rotatedPointC1.y} ` +
+					`L ${rotatedPointD1.x} ${rotatedPointD1.y} ` +
+					`Z M ${rotatedPointA2.x} ${rotatedPointA2.y} ` +
+					`L ${rotatedPointB2.x} ${rotatedPointB2.y} ` +
+					`L ${rotatedPointC2.x} ${rotatedPointC2.y} ` +
+					`L ${rotatedPointD2.x} ${rotatedPointD2.y} ` +
+					`L ${rotatedPointE2.x} ${rotatedPointE2.y} ` +
+					`L ${rotatedPointF2.x} ${rotatedPointF2.y} ` +
+					`L ${rotatedPointG2.x} ${rotatedPointG2.y} Z`
 				);
 			});
 		});
@@ -1695,6 +1813,11 @@ function Neo4jD3(_selector, _options) {
 		updateNodesAndRelationships(d3Data.nodes, d3Data.relationships);
 	}
 
+	/**
+	 * Update the graph with new nodes and relationships from an object
+	 * containing data in the neo4j format.
+	 * @param {Object} neo4jData The neo4j data object.
+	 */
 	function updateWithNeo4jData(neo4jData) {
 		const d3Data = neo4jDataToD3Data(neo4jData);
 		updateWithD3Data(d3Data);
@@ -1749,10 +1872,6 @@ function Neo4jD3(_selector, _options) {
 		relationshipText = relationshipEnter.text.merge(relationshipText);
 	}
 
-	function version() {
-		return VERSION;
-	}
-
 	function zoomFit(transitionDuration) {
 		const bounds = svg.node().getBBox();
 		const parent = svg.node().parentElement.parentElement;
@@ -1786,9 +1905,8 @@ function Neo4jD3(_selector, _options) {
 		resetWithNeo4jData: resetWithNeo4jData,
 		size: size,
 		updateWithD3Data: updateWithD3Data,
-		updateWithNeo4jData: updateWithNeo4jData,
-		version: version
+		updateWithNeo4jData: updateWithNeo4jData
 	};
 }
 
-module.exports = Neo4jD3;
+export default Neo4jD3;

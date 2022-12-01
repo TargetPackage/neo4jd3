@@ -1,6 +1,6 @@
 "use strict";
 
-const gulp = require("gulp");
+import gulp from "gulp";
 
 gulp.task("watch", function () {
 	gulp.watch("src/main/fonts/**/*", ["fonts"]);

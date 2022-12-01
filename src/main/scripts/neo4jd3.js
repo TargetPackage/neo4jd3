@@ -1,6 +1,7 @@
-/* global d3, document */
 /* jshint latedef:nofunc */
 "use strict";
+
+import * as d3 from "d3";
 
 function Neo4jD3(_selector, _options) {
 	var container,
@@ -75,7 +76,6 @@ function Neo4jD3(_selector, _options) {
 			.attr("height", "100%");
 
 		svgRelationships = svg.append("g").attr("class", "relationships");
-
 		svgNodes = svg.append("g").attr("class", "nodes");
 	}
 
@@ -1259,6 +1259,22 @@ function Neo4jD3(_selector, _options) {
 			relationships: []
 		};
 
+		// Detects if the data is in the format of the REST API or the Bolt driver
+		// and converts it to the d3 format
+		if (data?.results) {
+			return convertRESTDataToD3Data(graph, data);
+		} else {
+			return convertDriverDataToD3Data(graph, data);
+		}
+	}
+
+	/**
+	 * Converts data from the neo4j REST API format to the d3 format.
+	 * @link https://neo4j.com/developer/javascript/#js-http-endpoint
+	 * @param {{nodes: Array, relationships: Array}} graph
+	 * @param {Object} data
+	 */
+	function convertRESTDataToD3Data(graph, data) {
 		data.results.forEach(function (result) {
 			result.data.forEach(function (data) {
 				data.graph.nodes.forEach(function (node) {
@@ -1300,6 +1316,89 @@ function Neo4jD3(_selector, _options) {
 			});
 		});
 
+		return graph;
+	}
+
+	/**
+	 * Converts data from the neo4j JavaScript driver format to the d3 format.
+	 * @link https://neo4j.com/developer/javascript/#js-driver
+	 * @param {{nodes: Array, relationships: Array}} graph
+	 * @param {Object} data
+	 * @todo Define `data` type based on https://neo4j.com/developer/javascript/#js-http-endpoint
+	 */
+	function convertDriverDataToD3Data(graph, data) {
+		let nodes = [];
+		let relationships = [];
+
+		if (data.records) {
+			// Handle data that hasn't been mapped to `record.toObject()`
+			data.records.forEach(function (record) {
+				record._fields.forEach(function (field) {
+					if (field.identity) {
+						nodes.push(field);
+					} else if (field.start) {
+						relationships.push(field);
+					}
+				});
+			});
+		} else {
+			// Handle data that has already been mapped to `record.toObject()`
+			data.forEach(function (record) {
+				for (const key in record) {
+					const field = record[key];
+					if (field.start) {
+						relationships.push(field);
+					} else {
+						nodes.push(field);
+					}
+				};
+			});
+		}
+
+		const uniqueNodes = nodes.filter(
+			(e, i) => nodes.findIndex(a => a["elementId"] === e["elementId"]) === i
+		);
+		graph.nodes.push(...uniqueNodes);
+
+		const uniqueRelationships = relationships.filter(
+			(e, i) => relationships.findIndex(a =>
+				a["startNodeElementId"] === e["startNodeElementId"] &&
+				a["endNodeElementId"] === e["endNodeElementId"] &&
+				a["type"] === e["type"]
+			) === i
+		);
+		uniqueRelationships.forEach((relationship) => {
+			relationship.source = relationship.start;
+			relationship.target = relationship.end;
+		});
+		graph.relationships.push(...uniqueRelationships);
+
+		graph.relationships.sort(function (a, b) {
+			if (a.source > b.source) {
+				return 1;
+			} else if (a.source < b.source) {
+				return -1;
+			} else {
+				if (a.target > b.target) {
+					return 1;
+				}
+				return a.target < b.target ? -1 : 0;
+			}
+		});
+
+		for (let i = 0; i < graph.relationships.length; i++) {
+			if (
+				i !== 0 &&
+				graph.relationships[i].source === graph.relationships[i - 1].source &&
+				graph.relationships[i].target === graph.relationships[i - 1].target
+			) {
+				graph.relationships[i].linknum = graph.relationships[i - 1].linknum + 1;
+			} else {
+				graph.relationships[i].linknum = 1;
+			}
+		}
+
+		console.log("Graph: ", graph);
 		return graph;
 	}
 
@@ -1401,7 +1500,7 @@ function Neo4jD3(_selector, _options) {
 	function tickNodes() {
 		if (node) {
 			node.attr("transform", function (d) {
-				return "translate(" + d.x + ", " + d.y + ")";
+				return `translate(${d.x}, ${d.y})`;
 			});
 		}
 	}
@@ -1791,4 +1890,4 @@ function Neo4jD3(_selector, _options) {
 	};
 }
 
-module.exports = Neo4jD3;
+export default Neo4jD3;

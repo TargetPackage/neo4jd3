@@ -1,15 +1,15 @@
 "use strict";
 
-const conf = require("./conf");
-const del = require("del");
-const gulp = require("gulp");
+import { paths } from "./conf.js";
+import del from "del";
+import gulp from "gulp";
 
 gulp.task("clean", function () {
 	return del([
-		conf.paths.dist + "/**/*",
-		conf.paths.docs + "/css/neo4jd3.css",
-		conf.paths.docs + "/css/neo4jd3.min.css",
-		conf.paths.docs + "/js/neo4jd3.js",
-		conf.paths.docs + "/js/neo4jd3.min.js"
+		paths.dist + "/**/*",
+		paths.docs + "/css/neo4jd3.css",
+		paths.docs + "/css/neo4jd3.min.css",
+		paths.docs + "/js/neo4jd3.js",
+		paths.docs + "/js/neo4jd3.min.js"
 	]);
 });

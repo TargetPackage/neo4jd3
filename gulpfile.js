@@ -1,18 +1,14 @@
 /**
- *  The gulp tasks are split into several files in the gulp directory
+ * The gulp tasks are split into several files in the gulp directory
  */
 "use strict";
 
-const read = require("fs-readdir-recursive");
-
-/**
- *  This will load all js in the gulp directory
- */
-read("./gulp")
-	.filter(function (file) {
-		console.log(file);
-		return /\.(js)$/i.test(file);
-	})
-	.map(function (file) {
-		require("./gulp/" + file);
-	});
+import "./gulp/clean.js";
+import "./gulp/connect.js";
+import "./gulp/default.js";
+import "./gulp/images.js";
+import "./gulp/node_modules.js";
+import "./gulp/scripts.js";
+import "./gulp/styles.js";
+import "./gulp/test.js";
+import "./gulp/watch.js";

@@ -1,9 +1,8 @@
 // Karma configuration
-// Generated on Mon Jun 13 2016 14:11:39 GMT+0800 (PHT)
 
-var testPath = "src/test/";
-var srcPath = "src/main/";
-var proxyquire = require("proxyquireify");
+const testPath = "src/test/";
+const srcPath = "src/main/";
+const proxyquire = require("proxyquireify");
 
 module.exports = function (config) {
 	config.set({

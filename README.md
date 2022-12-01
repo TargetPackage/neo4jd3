@@ -68,7 +68,6 @@ const neo4jd3 = new Neo4jd3(".selector", options);
 | **size**()                                            | Returns the number of nodes and relationships.<br>Example:<br>`{`<br>&nbsp;&nbsp;&nbsp;&nbsp;`nodes: 25,`<br>&nbsp;&nbsp;&nbsp;&nbsp;`relationships: 50`<br>`}` |
 | **updateWithD3Data**(_d3Data_)                        | Updates the graph data using the [D3.js data format](#d3js-data-format).                                                                                        |
 | **updateWithNeo4jData**(_neo4jData_)                  | Updates the graph data using the [Neo4j data format](#neo4j-data-format).                                                                                       |
-| **version**()                                         | Returns the version of neo4jd3.js.<br>Example: `'0.0.1'`                                                                                                        |
 
 ### Documentation
 #### D3.js data format
@@ -245,7 +244,3 @@ const neo4jd3 = new Neo4jd3("#neo4jd3", {
 - Markers.
 - Performance optimization.
 - Testing.
-
-## Copyright and license
-
-Code and documentation copyright 2016 the author. Code released under the [MIT license](LICENSE). Docs released under [Creative Commons](docs/LICENSE).

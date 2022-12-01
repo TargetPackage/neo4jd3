@@ -1,7 +1,7 @@
 {
 	"name": "@targetpackage/neo4jd3",
 	"version": "1.0.0",
-	"description": "Neo4jD3",
+	"description": "Neo4jD3 is a JavaScript library for visualizing Neo4j graphs using D3.js.",
 	"bugs": {
 		"url": "https://github.com/TargetPackage/neo4jd3/issues"
 	},
@@ -11,7 +11,9 @@
 	},
 	"scripts": {
 		"start": "gulp",
-		"build": "browserify --entry ./src/main/index.js --standalone neo4jd3 --outfile ./dist/js/neo4jd3.js",
+		"build": "npm run build:dev && npm run build:prod && gulp styles",
+		"build:dev": "browserify -p esmify --entry ./src/main/index.js --standalone neo4jd3 --outfile ./dist/js/neo4jd3.js",
+		"build:prod": "browserify -p esmify --entry ./src/main/index.js | terser --compress --mangle --output ./dist/js/neo4jd3.min.js",
 		"test": "gulp test",
 		"lint": "prettier --plugin-search-dir . --check . && eslint .",
 		"format": "prettier --plugin-search-dir . --write ."
@@ -44,6 +46,7 @@
 		"del": "^6.1.1",
 		"eslint": "^8.28.0",
 		"eslint-config-prettier": "^8.5.0",
+		"esmify": "^2.1.1",
 		"fancy-log": "^2.0.0",
 		"font-awesome": "^4.7.0",
 		"gulp": "^4.0.2",
@@ -85,6 +88,7 @@
 		"sass": "^1.56.1",
 		"sinon": "^4.5.0",
 		"sinon-chai": "^2.14.0",
+		"terser": "^5.16.0",
 		"twemoji": "^14.0.2",
 		"vinyl-buffer": "^1.0.1",
 		"vinyl-source-stream": "^2.0.0",

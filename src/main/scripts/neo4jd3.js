@@ -113,6 +113,7 @@ function Neo4jD3(_selector, _options) {
 		elem
 			.attr("href", "#")
 			.attr("class", cls)
+			// skipcq: JS-0246
 			.html(`<strong>${property}</strong>` + (value ? ": " + value : ""));
 
 		if (!value) {
@@ -1389,15 +1390,15 @@ function Neo4jD3(_selector, _options) {
 		}
 
 		const uniqueNodes = nodes.filter(
-			(e, i) => nodes.findIndex(a => a["elementId"] === e["elementId"]) === i
+			(e, i) => nodes.findIndex(a => a.elementId === e.elementId) === i
 		);
 		graph.nodes.push(...uniqueNodes);
 
 		const uniqueRelationships = relationships.filter(
 			(e, i) => relationships.findIndex(a =>
-				a["startNodeElementId"] === e["startNodeElementId"] &&
-				a["endNodeElementId"] === e["endNodeElementId"] &&
-				a["type"] === e["type"]
+				a.startNodeElementId === e.startNodeElementId &&
+				a.endNodeElementId === e.endNodeElementId &&
+				a.type === e.type
 			) === i
 		);
 		uniqueRelationships.forEach((relationship) => {

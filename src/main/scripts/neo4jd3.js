@@ -57,7 +57,7 @@ function Neo4jD3(_selector, _options) {
 			.call(
 				d3.zoom().on("zoom", function (event) {
 					let scale = event.transform.k;
-					let translate = [event.transform.x, event.transform.y];
+					const translate = [event.transform.x, event.transform.y];
 
 					if (svgTranslate) {
 						translate[0] += svgTranslate[0];
@@ -169,7 +169,7 @@ function Neo4jD3(_selector, _options) {
 
 				if (options.highlight) {
 					for (let i = 0; i < options.highlight.length; i++) {
-						let highlight = options.highlight[i];
+						const highlight = options.highlight[i];
 
 						if (
 							d.labels[0] === highlight.class &&
@@ -1361,8 +1361,8 @@ function Neo4jD3(_selector, _options) {
 	 * @todo Define `data` type based on https://neo4j.com/developer/javascript/#js-http-endpoint
 	 */
 	function convertDriverDataToD3Data(graph, data) {
-		let nodes = [];
-		let relationships = [];
+		const nodes = [];
+		const relationships = [];
 
 		if (data.records) {
 			// Handle data that hasn't been mapped to `record.toObject()`

@@ -1361,17 +1361,17 @@ function Neo4jD3(_selector, _options) {
 	 * @todo Define `data` type based on https://neo4j.com/developer/javascript/#js-http-endpoint
 	 */
 	function convertDriverDataToD3Data(graph, data) {
-		const nodes = [];
-		const relationships = [];
+		const foundNodes = [];
+		const foundRelationships = [];
 
 		if (data.records) {
 			// Handle data that hasn't been mapped to `record.toObject()`
 			data.records.forEach(function (record) {
 				record._fields.forEach(function (field) {
 					if (field.identity) {
-						nodes.push(field);
+						foundNodes.push(field);
 					} else if (field.start) {
-						relationships.push(field);
+						foundRelationships.push(field);
 					}
 				});
 			});
@@ -1381,21 +1381,21 @@ function Neo4jD3(_selector, _options) {
 				for (const key in record) {
 					const field = record[key];
 					if (field.start) {
-						relationships.push(field);
+						foundRelationships.push(field);
 					} else {
-						nodes.push(field);
+						foundNodes.push(field);
 					}
 				};
 			});
 		}
 
-		const uniqueNodes = nodes.filter(
-			(e, i) => nodes.findIndex(a => a.elementId === e.elementId) === i
+		const uniqueNodes = foundNodes.filter(
+			(e, i) => foundNodes.findIndex(a => a.elementId === e.elementId) === i
 		);
 		graph.nodes.push(...uniqueNodes);
 
-		const uniqueRelationships = relationships.filter(
-			(e, i) => relationships.findIndex(a =>
+		const uniqueRelationships = foundRelationships.filter(
+			(e, i) => foundRelationships.findIndex(a =>
 				a.startNodeElementId === e.startNodeElementId &&
 				a.endNodeElementId === e.endNodeElementId &&
 				a.type === e.type

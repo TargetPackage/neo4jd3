@@ -290,7 +290,7 @@ function Neo4jD3(_selector, _options) {
 			.attr("pointer-events", "none")
 			.attr("text-anchor", "middle")
 			.attr("y", function (d) {
-				return icon(d) ? parseInt(Math.round(options.nodeRadius * 0.32)) + "px" : "4px";
+				return icon(d) ? parseInt(Math.round(options.nodeRadius * 0.32), 10) + "px" : "4px";
 			})
 			.html(function (d) {
 				const _icon = icon(d);

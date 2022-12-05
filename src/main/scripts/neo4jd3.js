@@ -117,21 +117,21 @@ function Neo4jD3(_selector, _options) {
 
 		if (!value) {
 			elem
-				.style("background-color", function (d) {
+				.style("background-color", function (_d) {
 					return options.nodeOutlineFillColor
 						? options.nodeOutlineFillColor
 						: isNode
 						? class2color(property)
 						: defaultColor();
 				})
-				.style("border-color", function (d) {
+				.style("border-color", function (_d) {
 					return options.nodeOutlineFillColor
 						? class2darkenColor(options.nodeOutlineFillColor)
 						: isNode
 						? class2darkenColor(property)
 						: defaultDarkenColor();
 				})
-				.style("color", function (d) {
+				.style("color", function (_d) {
 					return options.nodeOutlineFillColor
 						? class2darkenColor(options.nodeOutlineFillColor)
 						: "#fff";
@@ -1223,7 +1223,7 @@ function Neo4jD3(_selector, _options) {
 				"collide",
 				d3
 					.forceCollide()
-					.radius(function (d) {
+					.radius(function (_d) {
 						return options.minCollision;
 					})
 					.iterations(2)
@@ -1572,7 +1572,7 @@ function Neo4jD3(_selector, _options) {
 	}
 
 	function tickRelationshipsOutlines() {
-		relationship.each(function (relationship) {
+		relationship.each(function (_relationship) {
 			const rel = d3.select(this);
 			const outline = rel.select(".outline");
 			const text = rel.select(".text");
@@ -1872,7 +1872,7 @@ function Neo4jD3(_selector, _options) {
 		relationshipText = relationshipEnter.text.merge(relationshipText);
 	}
 
-	function zoomFit(transitionDuration) {
+	function zoomFit(_transitionDuration) {
 		const bounds = svg.node().getBBox();
 		const parent = svg.node().parentElement.parentElement;
 		const fullWidth = parent.clientWidth;

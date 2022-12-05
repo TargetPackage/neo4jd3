@@ -113,7 +113,7 @@ function Neo4jD3(_selector, _options) {
 		elem
 			.attr("href", "#")
 			.attr("class", cls)
-			.html("<strong>" + property + "</strong>" + (value ? ": " + value : ""));
+			.html(`<strong>${property}</strong>` + (value ? ": " + value : ""));
 
 		if (!value) {
 			elem
@@ -1738,23 +1738,10 @@ function Neo4jD3(_selector, _options) {
 			const rotatedPointD = rotatePoint(center, { x: 0 + n.x - n1.x, y: 0 + n.y - n1.y }, angle);
 
 			return (
-				"M " +
-				rotatedPointA.x +
-				" " +
-				rotatedPointA.y +
-				" L " +
-				rotatedPointB.x +
-				" " +
-				rotatedPointB.y +
-				" L " +
-				rotatedPointC.x +
-				" " +
-				rotatedPointC.y +
-				" L " +
-				rotatedPointD.x +
-				" " +
-				rotatedPointD.y +
-				" Z"
+				`M ${rotatedPointA.x} ${rotatedPointA.y}` +
+				` L ${rotatedPointB.x} ${rotatedPointB.y}` +
+				` L ${rotatedPointC.x} ${rotatedPointC.y}` +
+				` L ${rotatedPointD.x} ${rotatedPointD.y} Z`
 			);
 		});
 	}
@@ -1781,10 +1768,10 @@ function Neo4jD3(_selector, _options) {
 
 	function toString(d) {
 		let s = d.labels ? d.labels[0] : d.type;
-		s += " (<id>: " + d.id;
+		s += ` (<id>: ${d.id}`;
 
 		Object.keys(d.properties).forEach(function (property) {
-			s += ", " + property + ": " + JSON.stringify(d.properties[property]);
+			s += `, ${property}: ${JSON.stringify(d.properties[property])}`;
 		});
 
 		s += ")";

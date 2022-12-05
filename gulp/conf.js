@@ -26,7 +26,7 @@ export const errorHandler = function (title) {
 	"use strict";
 
 	return function (err) {
-		log(c.red("[" + title + "]"), err.toString());
+		log(c.red(`[${title}]`), err.toString());
 		this.emit("end");
 	};
 };

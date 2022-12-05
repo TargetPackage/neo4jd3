@@ -1204,7 +1204,7 @@ function Neo4jD3(_selector, _options) {
 		let keys;
 
 		for (const key in options.images) {
-			if (options.images.hasOwnProperty(key)) {
+			if (Object.prototype.hasOwnProperty.call(options.images, key)) {
 				keys = key.split("|");
 
 				if (!options.imageMap[keys[0]]) {

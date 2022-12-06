@@ -1350,6 +1350,7 @@ function Neo4jD3(_selector, _options) {
 			});
 		});
 
+		console.debug("convertRESTDataToD3Data graph: ", graph);
 		return graph;
 	}
 
@@ -1383,6 +1384,7 @@ function Neo4jD3(_selector, _options) {
 					if (field.start) {
 						foundRelationships.push(field);
 					} else {
+						// IDEA: Go the `if (!contains(graph.nodes, node.id))` route
 						foundNodes.push(field);
 					}
 				};
@@ -1401,10 +1403,12 @@ function Neo4jD3(_selector, _options) {
 				a.type === e.type
 			) === i
 		);
-		uniqueRelationships.forEach((relationship) => {
-			relationship.source = relationship.start;
-			relationship.target = relationship.end;
-		});
+		for (const relationship of uniqueRelationships) {
+			const startNode = uniqueNodes.find(node => node.elementId === relationship.startNodeElementId);
+			const endNode = uniqueNodes.find(node => node.elementId === relationship.endNodeElementId);
+			relationship.source = startNode;
+			relationship.target = endNode;
+		}
 		graph.relationships.push(...uniqueRelationships);
 
 		graph.relationships.sort(function (a, b) {
@@ -1432,7 +1436,7 @@ function Neo4jD3(_selector, _options) {
 			}
 		}
 
-		console.log("Graph: ", graph);
+		console.debug("convertDriverDataToD3Data graph: ", graph);
 		return graph;
 	}
 
@@ -1779,17 +1783,16 @@ function Neo4jD3(_selector, _options) {
 		return s;
 	}
 
-	function unitaryNormalVector(source, target, newLength) {
+	function unitaryNormalVector(source, target, newLength = 1) {
 		const center = { x: 0, y: 0 };
 		const vector = unitaryVector(source, target, newLength);
-
 		return rotatePoint(center, vector, 90);
 	}
 
-	function unitaryVector(source, target, newLength) {
-		const length =
-			Math.sqrt(Math.pow(target.x - source.x, 2) + Math.pow(target.y - source.y, 2)) /
-			Math.sqrt(newLength || 1);
+	function unitaryVector(source, target, newLength = 1) {
+		const a2 = Math.pow(target.x - source.x, 2);
+		const b2 = Math.pow(target.y - source.y, 2);
+		const length = Math.sqrt(a2 + b2) / Math.sqrt(newLength);
 
 		return {
 			x: (target.x - source.x) / length,

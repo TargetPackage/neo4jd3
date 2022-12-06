@@ -29718,7 +29718,7 @@ function Neo4jD3(_selector, _options) {
   function appendGraph(container) {
     svg = container.append("svg").attr("width", "100%").attr("height", "100%").attr("class", "neo4jd3-graph").call(d3.zoom().on("zoom", function (event) {
       let scale = event.transform.k;
-      let translate = [event.transform.x, event.transform.y];
+      const translate = [event.transform.x, event.transform.y];
       if (svgTranslate) {
         translate[0] += svgTranslate[0];
         translate[1] += svgTranslate[1];
@@ -29749,13 +29749,15 @@ function Neo4jD3(_selector, _options) {
   }
   function appendInfoElement(cls, isNode, property, value) {
     const elem = info.append("a");
-    elem.attr("href", "#").attr("class", cls).html("<strong>" + property + "</strong>" + (value ? ": " + value : ""));
+    elem.attr("href", "#").attr("class", cls)
+    // skipcq: JS-0246
+    .html(`<strong>${property}</strong>` + (value ? ": " + value : ""));
     if (!value) {
-      elem.style("background-color", function (d) {
+      elem.style("background-color", function (_d) {
         return options.nodeOutlineFillColor ? options.nodeOutlineFillColor : isNode ? class2color(property) : defaultColor();
-      }).style("border-color", function (d) {
+      }).style("border-color", function (_d) {
         return options.nodeOutlineFillColor ? class2darkenColor(options.nodeOutlineFillColor) : isNode ? class2darkenColor(property) : defaultDarkenColor();
-      }).style("color", function (d) {
+      }).style("color", function (_d) {
         return options.nodeOutlineFillColor ? class2darkenColor(options.nodeOutlineFillColor) : "#fff";
       });
     }
@@ -29780,7 +29782,7 @@ function Neo4jD3(_selector, _options) {
       }
       if (options.highlight) {
         for (let i = 0; i < options.highlight.length; i++) {
-          let highlight = options.highlight[i];
+          const highlight = options.highlight[i];
           if (d.labels[0] === highlight.class && d.properties[highlight.property] === highlight.value) {
             classes += " node-highlighted";
             break;
@@ -29858,7 +29860,7 @@ function Neo4jD3(_selector, _options) {
     }).attr("fill", options.nodeTextColor).attr("font-size", function (d) {
       return icon(d) ? options.nodeRadius + "px" : "10px";
     }).attr("pointer-events", "none").attr("text-anchor", "middle").attr("y", function (d) {
-      return icon(d) ? parseInt(Math.round(options.nodeRadius * 0.32)) + "px" : "4px";
+      return icon(d) ? parseInt(Math.round(options.nodeRadius * 0.32), 10) + "px" : "4px";
     }).html(function (d) {
       const _icon = icon(d);
       let text = d.id;
@@ -30732,7 +30734,7 @@ function Neo4jD3(_selector, _options) {
   function initImageMap() {
     let keys;
     for (const key in options.images) {
-      if (options.images.hasOwnProperty(key)) {
+      if (Object.prototype.hasOwnProperty.call(options.images, key)) {
         keys = key.split("|");
         if (!options.imageMap[keys[0]]) {
           options.imageMap[keys[0]] = [key];
@@ -30743,7 +30745,7 @@ function Neo4jD3(_selector, _options) {
     }
   }
   function initSimulation() {
-    const simulation = d3.forceSimulation().force("collide", d3.forceCollide().radius(function (d) {
+    const simulation = d3.forceSimulation().force("collide", d3.forceCollide().radius(function (_d) {
       return options.minCollision;
     }).iterations(2)).force("charge", d3.forceManyBody()).force("link", d3.forceLink().id(function (d) {
       return d.id;
@@ -30837,6 +30839,7 @@ function Neo4jD3(_selector, _options) {
         }
       });
     });
+    console.debug("convertRESTDataToD3Data graph: ", graph);
     return graph;
   }
 
@@ -30848,16 +30851,16 @@ function Neo4jD3(_selector, _options) {
    * @todo Define `data` type based on https://neo4j.com/developer/javascript/#js-http-endpoint
    */
   function convertDriverDataToD3Data(graph, data) {
-    let nodes = [];
-    let relationships = [];
+    const foundNodes = [];
+    const foundRelationships = [];
     if (data.records) {
       // Handle data that hasn't been mapped to `record.toObject()`
       data.records.forEach(function (record) {
         record._fields.forEach(function (field) {
           if (field.identity) {
-            nodes.push(field);
+            foundNodes.push(field);
           } else if (field.start) {
-            relationships.push(field);
+            foundRelationships.push(field);
           }
         });
       });
@@ -30867,21 +30870,24 @@ function Neo4jD3(_selector, _options) {
         for (const key in record) {
           const field = record[key];
           if (field.start) {
-            relationships.push(field);
+            foundRelationships.push(field);
           } else {
-            nodes.push(field);
+            // IDEA: Go the `if (!contains(graph.nodes, node.id))` route
+            foundNodes.push(field);
           }
         }
         ;
       });
     }
-    const uniqueNodes = nodes.filter((e, i) => nodes.findIndex(a => a["elementId"] === e["elementId"]) === i);
+    const uniqueNodes = foundNodes.filter((e, i) => foundNodes.findIndex(a => a.elementId === e.elementId) === i);
     graph.nodes.push(...uniqueNodes);
-    const uniqueRelationships = relationships.filter((e, i) => relationships.findIndex(a => a["startNodeElementId"] === e["startNodeElementId"] && a["endNodeElementId"] === e["endNodeElementId"] && a["type"] === e["type"]) === i);
-    uniqueRelationships.forEach(relationship => {
-      relationship.source = relationship.start;
-      relationship.target = relationship.end;
-    });
+    const uniqueRelationships = foundRelationships.filter((e, i) => foundRelationships.findIndex(a => a.startNodeElementId === e.startNodeElementId && a.endNodeElementId === e.endNodeElementId && a.type === e.type) === i);
+    for (const relationship of uniqueRelationships) {
+      const startNode = uniqueNodes.find(node => node.elementId === relationship.startNodeElementId);
+      const endNode = uniqueNodes.find(node => node.elementId === relationship.endNodeElementId);
+      relationship.source = startNode;
+      relationship.target = endNode;
+    }
     graph.relationships.push(...uniqueRelationships);
     graph.relationships.sort(function (a, b) {
       if (a.source > b.source) {
@@ -30902,7 +30908,7 @@ function Neo4jD3(_selector, _options) {
         graph.relationships[i].linknum = 1;
       }
     }
-    console.log("Graph: ", graph);
+    console.debug("convertDriverDataToD3Data graph: ", graph);
     return graph;
   }
   function randomD3Data(d, maxNodesToGenerate) {
@@ -31029,7 +31035,7 @@ function Neo4jD3(_selector, _options) {
     }
   }
   function tickRelationshipsOutlines() {
-    relationship.each(function (relationship) {
+    relationship.each(function (_relationship) {
       const rel = d3.select(this);
       const outline = rel.select(".outline");
       const text = rel.select(".text");
@@ -31120,7 +31126,7 @@ function Neo4jD3(_selector, _options) {
         x: 0 + n.x - n1.x,
         y: 0 + n.y - n1.y
       }, angle);
-      return "M " + rotatedPointA.x + " " + rotatedPointA.y + " L " + rotatedPointB.x + " " + rotatedPointB.y + " L " + rotatedPointC.x + " " + rotatedPointC.y + " L " + rotatedPointD.x + " " + rotatedPointD.y + " Z";
+      return `M ${rotatedPointA.x} ${rotatedPointA.y}` + ` L ${rotatedPointB.x} ${rotatedPointB.y}` + ` L ${rotatedPointC.x} ${rotatedPointC.y}` + ` L ${rotatedPointD.x} ${rotatedPointD.y} Z`;
     });
   }
   function tickRelationshipsTexts() {
@@ -31143,14 +31149,14 @@ function Neo4jD3(_selector, _options) {
   }
   function toString(d) {
     let s = d.labels ? d.labels[0] : d.type;
-    s += " (<id>: " + d.id;
+    s += ` (<id>: ${d.id}`;
     Object.keys(d.properties).forEach(function (property) {
-      s += ", " + property + ": " + JSON.stringify(d.properties[property]);
+      s += `, ${property}: ${JSON.stringify(d.properties[property])}`;
     });
     s += ")";
     return s;
   }
-  function unitaryNormalVector(source, target, newLength) {
+  function unitaryNormalVector(source, target, newLength = 1) {
     const center = {
       x: 0,
       y: 0
@@ -31158,8 +31164,10 @@ function Neo4jD3(_selector, _options) {
     const vector = unitaryVector(source, target, newLength);
     return rotatePoint(center, vector, 90);
   }
-  function unitaryVector(source, target, newLength) {
-    const length = Math.sqrt(Math.pow(target.x - source.x, 2) + Math.pow(target.y - source.y, 2)) / Math.sqrt(newLength || 1);
+  function unitaryVector(source, target, newLength = 1) {
+    const a2 = Math.pow(target.x - source.x, 2);
+    const b2 = Math.pow(target.y - source.y, 2);
+    const length = Math.sqrt(a2 + b2) / Math.sqrt(newLength);
     return {
       x: (target.x - source.x) / length,
       y: (target.y - source.y) / length
@@ -31214,7 +31222,7 @@ function Neo4jD3(_selector, _options) {
     relationshipText = svg.selectAll(".relationship .text");
     relationshipText = relationshipEnter.text.merge(relationshipText);
   }
-  function zoomFit(transitionDuration) {
+  function zoomFit(_transitionDuration) {
     const bounds = svg.node().getBBox();
     const parent = svg.node().parentElement.parentElement;
     const fullWidth = parent.clientWidth;

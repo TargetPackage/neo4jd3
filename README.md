@@ -70,6 +70,7 @@ const neo4jd3 = new Neo4jd3(".selector", options);
 | **updateWithNeo4jData**(_neo4jData_)                  | Updates the graph data using the [Neo4j data format](#neo4j-data-format).                                                                                       |
 
 ### Documentation
+
 #### D3.js data format
 
 ```
@@ -164,7 +165,7 @@ const neo4jd3 = new Neo4jd3(".selector", options);
 Live example @ [https://targetpackage.github.io/neo4jd3/](https://targetpackage.github.io/neo4jd3/)
 
 ```javascript
-const neo4jd3 = new Neo4jd3("#neo4jd3", {
+const neo4jd3 = new Neo4jd3.default("#neo4jd3", {
   highlight: [
     {
       class: "Project",

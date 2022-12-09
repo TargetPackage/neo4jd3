@@ -201,7 +201,7 @@
 								"id": "25",
 								"labels": ["Google"],
 								"properties": {
-									"url": "https://www.google.com/#q=\"neo4jd3\""
+									"url": "https://www.google.com/search?q=\"neo4jd3\""
 								}
 							}
 						],

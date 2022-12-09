@@ -10,7 +10,7 @@
 	"boss": true,
 	"eqnull": true,
 	"node": true,
-	"esversion": 6,
+	"esversion": 11,
 	"globals": {
 		/* MOCHA */
 		"describe": false,

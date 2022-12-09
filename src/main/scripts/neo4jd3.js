@@ -106,10 +106,7 @@ class Neo4jD3 {
 						scale *= this.svgScale;
 					}
 
-					this.svg.attr(
-						"transform",
-						`translate(${translate[0]}, ${translate[1]}) scale(${scale})`
-					);
+					this.svg.attr("transform", `translate(${translate[0]}, ${translate[1]}) scale(${scale})`);
 				})
 			)
 			.on("dblclick.zoom", null)
@@ -253,10 +250,12 @@ class Neo4jD3 {
 					this.options.onNodeMouseLeave(d);
 				}
 			})
-			.call(d3.drag()
-				.on("start", this.dragStarted.bind(this))
-				.on("drag", this.dragged.bind(this))
-				.on("end", this.dragEnded.bind(this))
+			.call(
+				d3
+					.drag()
+					.on("start", this.dragStarted.bind(this))
+					.on("drag", this.dragged.bind(this))
+					.on("end", this.dragEnded.bind(this))
 			);
 	}
 
@@ -332,7 +331,9 @@ class Neo4jD3 {
 			.attr("pointer-events", "none")
 			.attr("text-anchor", "middle")
 			.attr("y", (d) => {
-				return this.icon(d) ? parseInt(Math.round(this.options.nodeRadius * 0.32), 10) + "px" : "4px";
+				return this.icon(d)
+					? parseInt(Math.round(this.options.nodeRadius * 0.32), 10) + "px"
+					: "4px";
 			})
 			.html((d) => {
 				const _icon = this.icon(d);
@@ -1145,7 +1146,10 @@ class Neo4jD3 {
 		let code;
 
 		if (this.options.iconMap && this.options.showIcons && this.options.icons) {
-			if (this.options.icons[d.labels[0]] && this.options.iconMap[this.options.icons[d.labels[0]]]) {
+			if (
+				this.options.icons[d.labels[0]] &&
+				this.options.iconMap[this.options.icons[d.labels[0]]]
+			) {
 				code = this.options.iconMap[this.options.icons[d.labels[0]]];
 			} else if (this.options.iconMap[d.labels[0]]) {
 				code = this.options.iconMap[d.labels[0]];
@@ -1399,25 +1403,29 @@ class Neo4jD3 {
 						// IDEA: Go the `if (!contains(graph.nodes, node.id))` route
 						foundNodes.push(field);
 					}
-				};
+				}
 			});
 		}
 
 		const uniqueNodes = foundNodes.filter(
-			(e, i) => foundNodes.findIndex(a => a.elementId === e.elementId) === i
+			(e, i) => foundNodes.findIndex((a) => a.elementId === e.elementId) === i
 		);
 		graph.nodes.push(...uniqueNodes);
 
 		const uniqueRelationships = foundRelationships.filter(
-			(e, i) => foundRelationships.findIndex(a =>
-				a.startNodeElementId === e.startNodeElementId &&
-				a.endNodeElementId === e.endNodeElementId &&
-				a.type === e.type
-			) === i
+			(e, i) =>
+				foundRelationships.findIndex(
+					(a) =>
+						a.startNodeElementId === e.startNodeElementId &&
+						a.endNodeElementId === e.endNodeElementId &&
+						a.type === e.type
+				) === i
 		);
 		for (const relationship of uniqueRelationships) {
-			const startNode = uniqueNodes.find(node => node.elementId === relationship.startNodeElementId);
-			const endNode = uniqueNodes.find(node => node.elementId === relationship.endNodeElementId);
+			const startNode = uniqueNodes.find(
+				(node) => node.elementId === relationship.startNodeElementId
+			);
+			const endNode = uniqueNodes.find((node) => node.elementId === relationship.endNodeElementId);
 			relationship.source = startNode;
 			relationship.target = endNode;
 		}
@@ -1458,14 +1466,14 @@ class Neo4jD3 {
 			relationships: []
 		};
 		const numNodes = ((maxNodesToGenerate * Math.random()) << 0) + 1;
-		const s = size();
+		const s = this.size();
 
 		let relationship;
 		let label;
 		let node;
 
 		for (let i = 0; i < numNodes; i++) {
-			label = randomLabel();
+			label = this.randomLabel();
 
 			node = {
 				id: s.nodes + 1 + i,
@@ -1549,8 +1557,8 @@ class Neo4jD3 {
 	 */
 	size() {
 		return {
-			nodes: nodes.length,
-			relationships: relationships.length
+			nodes: this.nodes.length,
+			relationships: this.relationships.length
 		};
 	}
 
@@ -1757,7 +1765,11 @@ class Neo4jD3 {
 				},
 				angle
 			);
-			const rotatedPointD = this.rotatePoint(center, { x: 0 + n.x - n1.x, y: 0 + n.y - n1.y }, angle);
+			const rotatedPointD = this.rotatePoint(
+				center,
+				{ x: 0 + n.x - n1.x, y: 0 + n.y - n1.y },
+				angle
+			);
 
 			return (
 				`M ${rotatedPointA.x} ${rotatedPointA.y}` +
@@ -1781,10 +1793,7 @@ class Neo4jD3 {
 			};
 			const rotatedPoint = this.rotatePoint(center, point, angle);
 
-			return (
-				`translate(${rotatedPoint.x}, ${rotatedPoint.y})` +
-				`rotate(${mirror ? 180 : 0})`
-			);
+			return `translate(${rotatedPoint.x}, ${rotatedPoint.y})` + `rotate(${mirror ? 180 : 0})`;
 		});
 	}
 
@@ -1865,7 +1874,9 @@ class Neo4jD3 {
 
 	updateRelationships(r) {
 		Array.prototype.push.apply(this.relationships, r);
-		this.relationship = this.svgRelationships.selectAll(".relationship").data(this.relationships, (d) => d.id);
+		this.relationship = this.svgRelationships
+			.selectAll(".relationship")
+			.data(this.relationships, (d) => d.id);
 
 		const relationshipEnter = this.appendRelationshipToGraph();
 		this.relationship = relationshipEnter.relationship.merge(this.relationship);
@@ -1896,9 +1907,12 @@ class Neo4jD3 {
 		}
 
 		this.svgScale = 0.85 / Math.max(width / fullWidth, height / fullHeight);
-		this.svgTranslate = [fullWidth / 2 - this.svgScale * midX, fullHeight / 2 - this.svgScale * midY];
+		this.svgTranslate = [
+			fullWidth / 2 - this.svgScale * midX,
+			fullHeight / 2 - this.svgScale * midY
+		];
 
-		svg.attr(
+		this.svg.attr(
 			"transform",
 			`translate(${this.svgTranslate[0]}, ${this.svgTranslate[1]}) scale(${this.svgScale})`
 		);

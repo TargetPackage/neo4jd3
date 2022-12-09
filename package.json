@@ -11,9 +11,10 @@
 	},
 	"scripts": {
 		"start": "gulp",
-		"build": "npm run build:dev && npm run build:prod && gulp styles",
-		"build:dev": "browserify -p esmify --entry ./src/main/index.js --standalone neo4jd3 --outfile ./dist/js/neo4jd3.js",
-		"build:prod": "browserify -p esmify --entry ./src/main/index.js | terser --compress --mangle --output ./dist/js/neo4jd3.min.js",
+		"build": "npm run build:bundle && npm run build:bundle:min && npm run build:demo && npm run build:demo:min && gulp styles",
+		"build:bundle": "browserify -p esmify -t babelify --presets @babel/preset-env --entry ./src/main/index.js --standalone Neo4jd3 --outfile ./dist/js/neo4jd3.js",
+		"build:bundle:min": "terser ./dist/js/neo4jd3.js --compress --mangle --output ./dist/js/neo4jd3.min.js",
+		"build:demo": "browserify -p esmify -t babelify --presets @babel/preset-env --entry ./src/main/index.js --standalone Neo4jd3 --outfile ./docs/js/neo4jd3.js",
 		"test": "gulp test",
 		"lint": "prettier --plugin-search-dir . --check . && eslint .",
 		"format": "prettier --plugin-search-dir . --write ."
@@ -36,8 +37,11 @@
 		"d3": "^7.6.1"
 	},
 	"devDependencies": {
+		"@babel/core": "^7.20.5",
+		"@babel/preset-env": "^7.20.2",
 		"@popperjs/core": "^2.11.6",
 		"ansi-colors": "^4.1.3",
+		"babelify": "^10.0.0",
 		"bootstrap": "^5.2.3",
 		"browserify": "^17.0.0",
 		"browserify-shim": "^3.8.16",

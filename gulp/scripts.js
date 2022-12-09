@@ -20,6 +20,7 @@ import source from "vinyl-source-stream";
 import uglify from "gulp-uglify";
 import watchify from "watchify";
 
+// No longer required because d3 is now included in the bundle
 gulp.task("scripts:external", function () {
 	return gulp
 		.src(["node_modules/d3/dist/d3.min.js"])
@@ -29,7 +30,7 @@ gulp.task("scripts:external", function () {
 
 gulp.task("scripts:jshint", function () {
 	return gulp
-		.src("src/main/scripts/neo4jd3.js")
+		.src(paths.src + "/scripts/neo4jd3.js")
 		.pipe(jshint(".jshintrc"))
 		.pipe(jshint.reporter("default"));
 });
@@ -42,7 +43,7 @@ gulp.task("scripts:derequire", function () {
 
 gulp.task("scripts:internal", gulp.series("scripts:jshint", "scripts:derequire"), function () {
 	return gulp
-		.src(paths.docs + "/js/neo4jd3.js")
+		.src(paths.src + "/scripts/neo4jd3.js")
 		.pipe(concat("neo4jd3.js"))
 		.pipe(gulp.dest(paths.docs + "/js"))
 		.pipe(rename({ suffix: ".min" }))
@@ -51,7 +52,7 @@ gulp.task("scripts:internal", gulp.series("scripts:jshint", "scripts:derequire")
 		.pipe(connect.reload());
 });
 
-gulp.task("scripts", gulp.series("scripts:external", "scripts:internal"), function () {
+gulp.task("scripts", gulp.series(/*"scripts:external",*/ "scripts:internal"), function () {
 	return gulp
 		.src([paths.docs + "/js/neo4jd3.js", paths.docs + "/js/neo4jd3.min.js"])
 		.pipe(gulp.dest(paths.dist + "/js"));

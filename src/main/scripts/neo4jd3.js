@@ -40,7 +40,8 @@ class Neo4jD3 {
 			nodeTextProperty: undefined,
 			nodeTextColor: "#ffffff",
 			relationshipColor: "#a5abb6",
-			zoomFit: false
+			zoomFit: false,
+			showNullProperties: false,
 		};
 
 		this.init(_selector, _options);
@@ -1853,7 +1854,10 @@ class Neo4jD3 {
 		this.appendInfoElementProperty("property", "&lt;id&gt;", d.id);
 
 		Object.keys(d.properties).forEach((property) => {
-			this.appendInfoElementProperty("property", property, JSON.stringify(d.properties[property]));
+			const value = d.properties[property];
+			if (this.options.showNullProperties || Boolean(value)) {
+				this.appendInfoElementProperty("property", property, JSON.stringify(value));
+			}
 		});
 	}
 

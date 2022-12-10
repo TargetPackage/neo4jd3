@@ -11,7 +11,7 @@
 	},
 	"scripts": {
 		"start": "gulp",
-		"build": "npm run build:bundle && npm run build:bundle:min && npm run build:demo && npm run build:demo:min && gulp styles",
+		"build": "npm run build:bundle && npm run build:bundle:min && npm run build:demo && gulp styles",
 		"build:bundle": "browserify -p esmify -t babelify --presets @babel/preset-env --entry ./src/main/index.js --standalone Neo4jd3 --outfile ./dist/js/neo4jd3.js",
 		"build:bundle:min": "terser ./dist/js/neo4jd3.js --compress --mangle --output ./dist/js/neo4jd3.min.js",
 		"build:demo": "browserify -p esmify -t babelify --presets @babel/preset-env --entry ./src/main/index.js --standalone Neo4jd3 --outfile ./docs/js/neo4jd3.js",

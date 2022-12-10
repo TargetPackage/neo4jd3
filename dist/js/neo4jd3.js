@@ -29865,9 +29865,10 @@ class Neo4jD3 {
         this.options.onNodeClick(d);
       }
     }).on("dblclick", (event, d) => {
-      this.stickNode(event, d);
       if (typeof this.options.onNodeDoubleClick === "function") {
         this.options.onNodeDoubleClick(d);
+      } else {
+        this.stickNode(event, d);
       }
     }).on("mouseenter", (event, d) => {
       if (this.info) {
@@ -30918,6 +30919,7 @@ class Neo4jD3 {
       data.forEach(function (record) {
         for (const key in record) {
           const field = record[key];
+          if (!field) continue;
           if (field.start) {
             foundRelationships.push(field);
           } else {

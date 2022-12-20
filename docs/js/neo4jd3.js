@@ -4,6 +4,205 @@
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
+exports.default = _default;
+const utils = {
+  noop: function () {},
+  /**
+   * @param {*} value
+   * @returns {Boolean}
+   */
+  isFn: function (value) {
+    return typeof value === "function";
+  },
+  /**
+   * @param {*} value
+   * @returns {Function}
+   */
+  const: function (value) {
+    return function () {
+      return value;
+    };
+  },
+  /**
+   * @param {Function|*} value
+   * @param {*} [fallback]
+   * @returns {Function}
+   */
+  toFactory: function (value, fallback) {
+    value = value === undefined ? fallback : value;
+    return utils.isFn(value) ? value : utils.const(value);
+  }
+};
+
+// global state for d3-context-menu
+var d3ContextMenu = null;
+const closeMenu = () => {
+  // global state is populated if a menu is currently opened
+  if (d3ContextMenu) {
+    d3.select(".d3-context-menu").remove();
+    d3.select("body").on("mousedown.d3-context-menu", null);
+    d3ContextMenu.boundCloseCallback();
+    d3ContextMenu = null;
+  }
+};
+
+/**
+ * Calls API method (e.g. `close`) or
+ * returns handler function for the `contextmenu` event
+ * @param {Function|Array|String} menuItems
+ * @param {Function|Object} config
+ * @returns {?Function}
+ */
+function _default(menuItems, config) {
+  // allow for `d3.contextMenu('close');` calls
+  // to programatically close the menu
+  if (menuItems === "close") {
+    return closeMenu();
+  }
+
+  // for convenience, make `menuItems` a factory
+  // and `config` an object
+  menuItems = utils.toFactory(menuItems);
+  if (utils.isFn(config)) {
+    config = {
+      onOpen: config
+    };
+  } else {
+    config = config || {};
+  }
+
+  // resolve config
+  const openCallback = config.onOpen || utils.noop;
+  const closeCallback = config.onClose || utils.noop;
+  const positionFactory = utils.toFactory(config.position);
+  const themeFactory = utils.toFactory(config.theme, "d3-context-menu-theme");
+  console.log("Above context menu return function");
+
+  /**
+   * Context menu event handler
+   * @param {*} param1
+   * @param {*} param2
+   */
+  return function (param1, param2) {
+    let element = this;
+
+    // eventOrIndex is the second argument that will be passed to
+    // the context menu callbacks: for D3 6.x or above it will be
+    // the event, since the global d3.event is not available.
+    // For D3 5.x or below it will be the index, for backward
+    // compatibility reasons.
+    let event, data, index, eventOrIndex;
+    if (d3.event === undefined) {
+      // Using D3 6.x or above
+      event = param1;
+      data = param2;
+
+      // We cannot tell the index properly in new D3 versions,
+      // since it is not possible to access the original selection.
+      index = undefined;
+      eventOrIndex = event;
+    } else {
+      // Using D3 5.x or below
+      event = d3.event;
+      data = param1;
+      index = param2;
+      eventOrIndex = index;
+    }
+
+    // close any menu that's already opened
+    closeMenu();
+
+    // store close callback already bound to the correct args and scope
+    d3ContextMenu = {
+      boundCloseCallback: closeCallback.bind(element, data, eventOrIndex)
+    };
+    console.log("Context menu d3:", d3);
+
+    // create the div element that will hold the context menu
+    d3.selectAll(".d3-context-menu").data([1]).enter().append("div").attr("class", "d3-context-menu " + themeFactory.bind(element)(data, eventOrIndex));
+
+    // close menu on mousedown outside
+    d3.select("body").on("mousedown.d3-context-menu", closeMenu);
+    d3.select("body").on("click.d3-context-menu", closeMenu);
+    const parent = d3.selectAll(".d3-context-menu").on("contextmenu", function () {
+      closeMenu();
+      event.preventDefault();
+      event.stopPropagation();
+    }).append("ul");
+    parent.call(createNestedMenu, element);
+
+    // the openCallback allows an action to fire before the menu is displayed
+    // an example usage would be closing a tooltip
+    if (openCallback.bind(element)(data, eventOrIndex) === false) {
+      return;
+    }
+
+    //console.log(this.parentNode.parentNode.parentNode);//.getBoundingClientRect());   Use this if you want to align your menu from the containing element, otherwise aligns towards center of window
+
+    // get position
+    const position = positionFactory.bind(element)(data, eventOrIndex);
+    const doc = document.documentElement;
+    const pageWidth = window.innerWidth || doc.clientWidth;
+    const pageHeight = window.innerHeight || doc.clientHeight;
+    let horizontalAlignment = "left";
+    let horizontalAlignmentReset = "right";
+    let horizontalValue = position ? position.left : event.pageX - 2;
+    if (event.pageX > pageWidth / 2) {
+      horizontalAlignment = "right";
+      horizontalAlignmentReset = "left";
+      horizontalValue = position ? pageWidth - position.left : pageWidth - event.pageX - 2;
+    }
+    let verticalAlignment = "top";
+    let verticalAlignmentReset = "bottom";
+    let verticalValue = position ? position.top : event.pageY - 2;
+    if (event.pageY > pageHeight / 2) {
+      verticalAlignment = "bottom";
+      verticalAlignmentReset = "top";
+      verticalValue = position ? pageHeight - position.top : pageHeight - event.pageY - 2;
+    }
+
+    // display context menu
+    d3.select(".d3-context-menu").style(horizontalAlignment, horizontalValue + "px").style(horizontalAlignmentReset, null).style(verticalAlignment, verticalValue + "px").style(verticalAlignmentReset, null).style("display", "block");
+    event.preventDefault();
+    event.stopPropagation();
+    function createNestedMenu(parent, root, depth = 0) {
+      const resolve = value => {
+        return utils.toFactory(value).call(root, data, eventOrIndex);
+      };
+      parent.selectAll("li").data(function (d) {
+        const baseData = depth === 0 ? menuItems : d.children;
+        return resolve(baseData);
+      }).enter().append("li").each(function (d) {
+        // get value of each data
+        const isDivider = !!resolve(d.divider);
+        const isDisabled = !!resolve(d.disabled);
+        const hasChildren = !!resolve(d.children);
+        const hasAction = !!d.action;
+        const hasCls = !!d.className;
+        const text = isDivider ? "<hr>" : resolve(d.title);
+        const listItem = d3.select(this).classed("is-divider", isDivider).classed("is-disabled", isDisabled).classed("is-header", !hasChildren && !hasAction).classed("is-parent", hasChildren).classed(resolve(d.className), hasCls).html(text).on("click", function () {
+          // do nothing if disabled or no action
+          if (isDisabled || !hasAction) return;
+          d.action.call(root, data, eventOrIndex);
+          closeMenu();
+        });
+        if (hasChildren) {
+          // create children(`next parent`) and call recursive
+          const children = listItem.append("ul").classed("is-children", true);
+          createNestedMenu(children, root, ++depth);
+        }
+      });
+    }
+  };
+}
+;
+
+},{}],2:[function(require,module,exports){
+"use strict";
+
+Object.defineProperty(exports, "__esModule", {
+  value: true
+});
 exports.slice = exports.map = void 0;
 var array = Array.prototype;
 var slice = array.slice;
@@ -11,7 +210,7 @@ exports.slice = slice;
 var map = array.map;
 exports.map = map;
 
-},{}],2:[function(require,module,exports){
+},{}],3:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22,7 +221,7 @@ function ascending(a, b) {
   return a == null || b == null ? NaN : a < b ? -1 : a > b ? 1 : a >= b ? 0 : NaN;
 }
 
-},{}],3:[function(require,module,exports){
+},{}],4:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -96,9 +295,13 @@ function bin() {
     }
 
     // Remove any thresholds outside the domain.
-    var m = tz.length;
-    while (tz[0] <= x0) tz.shift(), --m;
-    while (tz[m - 1] > x1) tz.pop(), --m;
+    // Be careful not to mutate an array owned by the user!
+    var m = tz.length,
+      a = 0,
+      b = m;
+    while (tz[a] <= x0) ++a;
+    while (tz[b - 1] > x1) --b;
+    if (a || b < m) tz = tz.slice(a, b), m = b - a;
     var bins = new Array(m + 1),
       bin;
 
@@ -141,12 +344,12 @@ function bin() {
     return arguments.length ? (domain = typeof _ === "function" ? _ : (0, _constant.default)([_[0], _[1]]), histogram) : domain;
   };
   histogram.thresholds = function (_) {
-    return arguments.length ? (threshold = typeof _ === "function" ? _ : Array.isArray(_) ? (0, _constant.default)(_array.slice.call(_)) : (0, _constant.default)(_), histogram) : threshold;
+    return arguments.length ? (threshold = typeof _ === "function" ? _ : (0, _constant.default)(Array.isArray(_) ? _array.slice.call(_) : _), histogram) : threshold;
   };
   return histogram;
 }
 
-},{"./array.js":1,"./bisect.js":4,"./constant.js":7,"./extent.js":16,"./identity.js":23,"./nice.js":37,"./threshold/sturges.js":56,"./ticks.js":57}],4:[function(require,module,exports){
+},{"./array.js":2,"./bisect.js":5,"./constant.js":8,"./extent.js":17,"./identity.js":24,"./nice.js":38,"./threshold/sturges.js":57,"./ticks.js":58}],5:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -167,7 +370,7 @@ exports.bisectCenter = bisectCenter;
 var _default = bisectRight;
 exports.default = _default;
 
-},{"./ascending.js":2,"./bisector.js":5,"./number.js":38}],5:[function(require,module,exports){
+},{"./ascending.js":3,"./bisector.js":6,"./number.js":39}],6:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -228,7 +431,7 @@ function zero() {
   return 0;
 }
 
-},{"./ascending.js":2,"./descending.js":11}],6:[function(require,module,exports){
+},{"./ascending.js":3,"./descending.js":12}],7:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -354,7 +557,7 @@ function bluri(radius) {
   };
 }
 
-},{}],7:[function(require,module,exports){
+},{}],8:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -365,7 +568,7 @@ function constant(x) {
   return () => x;
 }
 
-},{}],8:[function(require,module,exports){
+},{}],9:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -391,7 +594,7 @@ function count(values, valueof) {
   return count;
 }
 
-},{}],9:[function(require,module,exports){
+},{}],10:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -428,7 +631,7 @@ function cross(...values) {
   }
 }
 
-},{}],10:[function(require,module,exports){
+},{}],11:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -441,7 +644,7 @@ function cumsum(values, valueof) {
   return Float64Array.from(values, valueof === undefined ? v => sum += +v || 0 : v => sum += +valueof(v, index++, values) || 0);
 }
 
-},{}],11:[function(require,module,exports){
+},{}],12:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -452,7 +655,7 @@ function descending(a, b) {
   return a == null || b == null ? NaN : b < a ? -1 : b > a ? 1 : b >= a ? 0 : NaN;
 }
 
-},{}],12:[function(require,module,exports){
+},{}],13:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -466,7 +669,7 @@ function deviation(values, valueof) {
   return v ? Math.sqrt(v) : v;
 }
 
-},{"./variance.js":60}],13:[function(require,module,exports){
+},{"./variance.js":61}],14:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -484,7 +687,7 @@ function difference(values, ...others) {
   return values;
 }
 
-},{"internmap":564}],14:[function(require,module,exports){
+},{"internmap":559}],15:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -510,7 +713,7 @@ function disjoint(values, other) {
   return true;
 }
 
-},{"internmap":564}],15:[function(require,module,exports){
+},{"internmap":559}],16:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -528,7 +731,7 @@ function every(values, test) {
   return true;
 }
 
-},{}],16:[function(require,module,exports){
+},{}],17:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -565,7 +768,7 @@ function extent(values, valueof) {
   return [min, max];
 }
 
-},{}],17:[function(require,module,exports){
+},{}],18:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -584,7 +787,7 @@ function filter(values, test) {
   return array;
 }
 
-},{}],18:[function(require,module,exports){
+},{}],19:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -663,7 +866,7 @@ function fcumsum(values, valueof) {
   return Float64Array.from(values, valueof === undefined ? v => adder.add(+v || 0) : v => adder.add(+valueof(v, ++index, values) || 0));
 }
 
-},{}],19:[function(require,module,exports){
+},{}],20:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -696,7 +899,7 @@ function greatest(values, compare = _ascending.default) {
   return max;
 }
 
-},{"./ascending.js":2}],20:[function(require,module,exports){
+},{"./ascending.js":3}],21:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -721,7 +924,7 @@ function greatestIndex(values, compare = _ascending.default) {
   return max;
 }
 
-},{"./ascending.js":2,"./maxIndex.js":30}],21:[function(require,module,exports){
+},{"./ascending.js":3,"./maxIndex.js":31}],22:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -790,7 +993,7 @@ function nest(values, map, reduce, keys) {
   }(values, 0);
 }
 
-},{"./identity.js":23,"internmap":564}],22:[function(require,module,exports){
+},{"./identity.js":24,"internmap":559}],23:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -807,7 +1010,7 @@ function groupSort(values, reduce, key) {
   return (reduce.length !== 2 ? (0, _sort.default)((0, _group.rollup)(values, reduce, key), ([ak, av], [bk, bv]) => (0, _ascending.default)(av, bv) || (0, _ascending.default)(ak, bk)) : (0, _sort.default)((0, _group.default)(values, key), ([ak, av], [bk, bv]) => reduce(av, bv) || (0, _ascending.default)(ak, bk))).map(([key]) => key);
 }
 
-},{"./ascending.js":2,"./group.js":21,"./sort.js":50}],23:[function(require,module,exports){
+},{"./ascending.js":3,"./group.js":22,"./sort.js":51}],24:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -818,7 +1021,7 @@ function identity(x) {
   return x;
 }
 
-},{}],24:[function(require,module,exports){
+},{}],25:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1359,7 +1562,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 function _getRequireWildcardCache(nodeInterop) { if (typeof WeakMap !== "function") return null; var cacheBabelInterop = new WeakMap(); var cacheNodeInterop = new WeakMap(); return (_getRequireWildcardCache = function (nodeInterop) { return nodeInterop ? cacheNodeInterop : cacheBabelInterop; })(nodeInterop); }
 function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(nodeInterop); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (key !== "default" && Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
 
-},{"./ascending.js":2,"./bin.js":3,"./bisect.js":4,"./bisector.js":5,"./blur.js":6,"./count.js":8,"./cross.js":9,"./cumsum.js":10,"./descending.js":11,"./deviation.js":12,"./difference.js":13,"./disjoint.js":14,"./every.js":15,"./extent.js":16,"./filter.js":17,"./fsum.js":18,"./greatest.js":19,"./greatestIndex.js":20,"./group.js":21,"./groupSort.js":22,"./intersection.js":25,"./least.js":26,"./leastIndex.js":27,"./map.js":28,"./max.js":29,"./maxIndex.js":30,"./mean.js":31,"./median.js":32,"./merge.js":33,"./min.js":34,"./minIndex.js":35,"./mode.js":36,"./nice.js":37,"./pairs.js":39,"./permute.js":40,"./quantile.js":41,"./quickselect.js":42,"./range.js":43,"./rank.js":44,"./reduce.js":45,"./reverse.js":46,"./scan.js":47,"./shuffle.js":48,"./some.js":49,"./sort.js":50,"./subset.js":51,"./sum.js":52,"./superset.js":53,"./threshold/freedmanDiaconis.js":54,"./threshold/scott.js":55,"./threshold/sturges.js":56,"./ticks.js":57,"./transpose.js":58,"./union.js":59,"./variance.js":60,"./zip.js":61,"internmap":564}],25:[function(require,module,exports){
+},{"./ascending.js":3,"./bin.js":4,"./bisect.js":5,"./bisector.js":6,"./blur.js":7,"./count.js":9,"./cross.js":10,"./cumsum.js":11,"./descending.js":12,"./deviation.js":13,"./difference.js":14,"./disjoint.js":15,"./every.js":16,"./extent.js":17,"./filter.js":18,"./fsum.js":19,"./greatest.js":20,"./greatestIndex.js":21,"./group.js":22,"./groupSort.js":23,"./intersection.js":26,"./least.js":27,"./leastIndex.js":28,"./map.js":29,"./max.js":30,"./maxIndex.js":31,"./mean.js":32,"./median.js":33,"./merge.js":34,"./min.js":35,"./minIndex.js":36,"./mode.js":37,"./nice.js":38,"./pairs.js":40,"./permute.js":41,"./quantile.js":42,"./quickselect.js":43,"./range.js":44,"./rank.js":45,"./reduce.js":46,"./reverse.js":47,"./scan.js":48,"./shuffle.js":49,"./some.js":50,"./sort.js":51,"./subset.js":52,"./sum.js":53,"./superset.js":54,"./threshold/freedmanDiaconis.js":55,"./threshold/scott.js":56,"./threshold/sturges.js":57,"./ticks.js":58,"./transpose.js":59,"./union.js":60,"./variance.js":61,"./zip.js":62,"internmap":559}],26:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1384,7 +1587,7 @@ function set(values) {
   return values instanceof _internmap.InternSet ? values : new _internmap.InternSet(values);
 }
 
-},{"internmap":564}],26:[function(require,module,exports){
+},{"internmap":559}],27:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1417,7 +1620,7 @@ function least(values, compare = _ascending.default) {
   return min;
 }
 
-},{"./ascending.js":2}],27:[function(require,module,exports){
+},{"./ascending.js":3}],28:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1442,7 +1645,7 @@ function leastIndex(values, compare = _ascending.default) {
   return min;
 }
 
-},{"./ascending.js":2,"./minIndex.js":35}],28:[function(require,module,exports){
+},{"./ascending.js":3,"./minIndex.js":36}],29:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1455,7 +1658,7 @@ function map(values, mapper) {
   return Array.from(values, (value, index) => mapper(value, index, values));
 }
 
-},{}],29:[function(require,module,exports){
+},{}],30:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1481,7 +1684,7 @@ function max(values, valueof) {
   return max;
 }
 
-},{}],30:[function(require,module,exports){
+},{}],31:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1509,7 +1712,7 @@ function maxIndex(values, valueof) {
   return maxIndex;
 }
 
-},{}],31:[function(require,module,exports){
+},{}],32:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1536,7 +1739,7 @@ function mean(values, valueof) {
   if (count) return sum / count;
 }
 
-},{}],32:[function(require,module,exports){
+},{}],33:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1554,7 +1757,7 @@ function medianIndex(values, valueof) {
   return (0, _quantile.quantileIndex)(values, 0.5, valueof);
 }
 
-},{"./quantile.js":41}],33:[function(require,module,exports){
+},{"./quantile.js":42}],34:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1570,7 +1773,7 @@ function merge(arrays) {
   return Array.from(flatten(arrays));
 }
 
-},{}],34:[function(require,module,exports){
+},{}],35:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1596,7 +1799,7 @@ function min(values, valueof) {
   return min;
 }
 
-},{}],35:[function(require,module,exports){
+},{}],36:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1624,7 +1827,7 @@ function minIndex(values, valueof) {
   return minIndex;
 }
 
-},{}],36:[function(require,module,exports){
+},{}],37:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1659,7 +1862,7 @@ function mode(values, valueof) {
   return modeValue;
 }
 
-},{"internmap":564}],37:[function(require,module,exports){
+},{"internmap":559}],38:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1684,7 +1887,7 @@ function nice(start, stop, count) {
   }
 }
 
-},{"./ticks.js":57}],38:[function(require,module,exports){
+},{"./ticks.js":58}],39:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1712,7 +1915,7 @@ function* numbers(values, valueof) {
   }
 }
 
-},{}],39:[function(require,module,exports){
+},{}],40:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1735,7 +1938,7 @@ function pair(a, b) {
   return [a, b];
 }
 
-},{}],40:[function(require,module,exports){
+},{}],41:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1746,7 +1949,7 @@ function permute(source, keys) {
   return Array.from(keys, key => source[key]);
 }
 
-},{}],41:[function(require,module,exports){
+},{}],42:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1768,8 +1971,8 @@ function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && 
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 function quantile(values, p, valueof) {
   values = Float64Array.from((0, _number.numbers)(values, valueof));
-  if (!(n = values.length)) return;
-  if ((p = +p) <= 0 || n < 2) return (0, _min.default)(values);
+  if (!(n = values.length) || isNaN(p = +p)) return;
+  if (p <= 0 || n < 2) return (0, _min.default)(values);
   if (p >= 1) return (0, _max.default)(values);
   var n,
     i = (n - 1) * p,
@@ -1779,8 +1982,8 @@ function quantile(values, p, valueof) {
   return value0 + (value1 - value0) * (i - i0);
 }
 function quantileSorted(values, p, valueof = _number.default) {
-  if (!(n = values.length)) return;
-  if ((p = +p) <= 0 || n < 2) return +valueof(values[0], 0, values);
+  if (!(n = values.length) || isNaN(p = +p)) return;
+  if (p <= 0 || n < 2) return +valueof(values[0], 0, values);
   if (p >= 1) return +valueof(values[n - 1], n - 1, values);
   var n,
     i = (n - 1) * p,
@@ -1791,8 +1994,8 @@ function quantileSorted(values, p, valueof = _number.default) {
 }
 function quantileIndex(values, p, valueof) {
   values = Float64Array.from((0, _number.numbers)(values, valueof));
-  if (!(n = values.length)) return;
-  if ((p = +p) <= 0 || n < 2) return (0, _minIndex.default)(values);
+  if (!(n = values.length) || isNaN(p = +p)) return;
+  if (p <= 0 || n < 2) return (0, _minIndex.default)(values);
   if (p >= 1) return (0, _maxIndex.default)(values);
   var n,
     i = Math.floor((n - 1) * p),
@@ -1801,7 +2004,7 @@ function quantileIndex(values, p, valueof) {
   return (0, _greatest.default)(index.subarray(0, i + 1), i => values[i]);
 }
 
-},{"./greatest.js":19,"./max.js":29,"./maxIndex.js":30,"./min.js":34,"./minIndex.js":35,"./number.js":38,"./quickselect.js":42,"./sort.js":50}],42:[function(require,module,exports){
+},{"./greatest.js":20,"./max.js":30,"./maxIndex.js":31,"./min.js":35,"./minIndex.js":36,"./number.js":39,"./quickselect.js":43,"./sort.js":51}],43:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1811,7 +2014,11 @@ exports.default = quickselect;
 var _sort = require("./sort.js");
 // Based on https://github.com/mourner/quickselect
 // ISC license, Copyright 2018 Vladimir Agafonkin.
-function quickselect(array, k, left = 0, right = array.length - 1, compare) {
+function quickselect(array, k, left = 0, right = Infinity, compare) {
+  k = Math.floor(k);
+  left = Math.floor(Math.max(0, left));
+  right = Math.floor(Math.min(array.length - 1, right));
+  if (!(left <= k && k <= right)) return array;
   compare = compare === undefined ? _sort.ascendingDefined : (0, _sort.compareDefined)(compare);
   while (right > left) {
     if (right - left > 600) {
@@ -1846,7 +2053,7 @@ function swap(array, i, j) {
   array[j] = t;
 }
 
-},{"./sort.js":50}],43:[function(require,module,exports){
+},{"./sort.js":51}],44:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1864,7 +2071,7 @@ function range(start, stop, step) {
   return range;
 }
 
-},{}],44:[function(require,module,exports){
+},{}],45:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1893,7 +2100,7 @@ function rank(values, valueof = _ascending.default) {
   return R;
 }
 
-},{"./ascending.js":2,"./sort.js":50}],45:[function(require,module,exports){
+},{"./ascending.js":3,"./sort.js":51}],46:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1923,7 +2130,7 @@ function reduce(values, reducer, value) {
   return value;
 }
 
-},{}],46:[function(require,module,exports){
+},{}],47:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1935,7 +2142,7 @@ function reverse(values) {
   return Array.from(values).reverse();
 }
 
-},{}],47:[function(require,module,exports){
+},{}],48:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1949,7 +2156,7 @@ function scan(values, compare) {
   return index < 0 ? undefined : index;
 }
 
-},{"./leastIndex.js":27}],48:[function(require,module,exports){
+},{"./leastIndex.js":28}],49:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1972,7 +2179,7 @@ function shuffler(random) {
   };
 }
 
-},{}],49:[function(require,module,exports){
+},{}],50:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -1990,7 +2197,7 @@ function some(values, test) {
   return false;
 }
 
-},{}],50:[function(require,module,exports){
+},{}],51:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -2037,7 +2244,7 @@ function ascendingDefined(a, b) {
   return (a == null || !(a >= a)) - (b == null || !(b >= b)) || (a < b ? -1 : a > b ? 1 : 0);
 }
 
-},{"./ascending.js":2,"./permute.js":40}],51:[function(require,module,exports){
+},{"./ascending.js":3,"./permute.js":41}],52:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -2050,7 +2257,7 @@ function subset(values, other) {
   return (0, _superset.default)(other, values);
 }
 
-},{"./superset.js":53}],52:[function(require,module,exports){
+},{"./superset.js":54}],53:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -2076,7 +2283,7 @@ function sum(values, valueof) {
   return sum;
 }
 
-},{}],53:[function(require,module,exports){
+},{}],54:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -2106,7 +2313,7 @@ function intern(value) {
   return value !== null && typeof value === "object" ? value.valueOf() : value;
 }
 
-},{}],54:[function(require,module,exports){
+},{}],55:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -2120,7 +2327,7 @@ function thresholdFreedmanDiaconis(values, min, max) {
   return Math.ceil((max - min) / (2 * ((0, _quantile.default)(values, 0.75) - (0, _quantile.default)(values, 0.25)) * Math.pow((0, _count.default)(values), -1 / 3)));
 }
 
-},{"../count.js":8,"../quantile.js":41}],55:[function(require,module,exports){
+},{"../count.js":9,"../quantile.js":42}],56:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -2134,7 +2341,7 @@ function thresholdScott(values, min, max) {
   return Math.ceil((max - min) * Math.cbrt((0, _count.default)(values)) / (3.49 * (0, _deviation.default)(values)));
 }
 
-},{"../count.js":8,"../deviation.js":12}],56:[function(require,module,exports){
+},{"../count.js":9,"../deviation.js":13}],57:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -2147,7 +2354,7 @@ function thresholdSturges(values) {
   return Math.ceil(Math.log((0, _count.default)(values)) / Math.LN2) + 1;
 }
 
-},{"../count.js":8}],57:[function(require,module,exports){
+},{"../count.js":9}],58:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -2202,7 +2409,7 @@ function tickStep(start, stop, count) {
   return stop < start ? -step1 : step1;
 }
 
-},{}],58:[function(require,module,exports){
+},{}],59:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -2224,7 +2431,7 @@ function length(d) {
   return d.length;
 }
 
-},{"./min.js":34}],59:[function(require,module,exports){
+},{"./min.js":35}],60:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -2242,7 +2449,7 @@ function union(...others) {
   return set;
 }
 
-},{"internmap":564}],60:[function(require,module,exports){
+},{"internmap":559}],61:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -2275,7 +2482,7 @@ function variance(values, valueof) {
   if (count > 1) return sum / (count - 1);
 }
 
-},{}],61:[function(require,module,exports){
+},{}],62:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -2288,7 +2495,7 @@ function zip() {
   return (0, _transpose.default)(arguments);
 }
 
-},{"./transpose.js":58}],62:[function(require,module,exports){
+},{"./transpose.js":59}],63:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -2422,7 +2629,7 @@ function axisLeft(scale) {
   return axis(left, scale);
 }
 
-},{"./identity.js":63}],63:[function(require,module,exports){
+},{"./identity.js":64}],64:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -2433,7 +2640,7 @@ function _default(x) {
   return x;
 }
 
-},{}],64:[function(require,module,exports){
+},{}],65:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -2465,7 +2672,7 @@ Object.defineProperty(exports, "axisTop", {
 });
 var _axis = require("./axis.js");
 
-},{"./axis.js":62}],65:[function(require,module,exports){
+},{"./axis.js":63}],66:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -3021,7 +3228,7 @@ function brush(dim) {
   return brush;
 }
 
-},{"./constant.js":66,"./event.js":67,"./noevent.js":69,"d3-dispatch":97,"d3-drag":101,"d3-interpolate":260,"d3-selection":392,"d3-transition":528}],66:[function(require,module,exports){
+},{"./constant.js":67,"./event.js":68,"./noevent.js":70,"d3-dispatch":98,"d3-drag":102,"d3-interpolate":261,"d3-selection":393,"d3-transition":523}],67:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -3031,7 +3238,7 @@ exports.default = void 0;
 var _default = x => () => x;
 exports.default = _default;
 
-},{}],67:[function(require,module,exports){
+},{}],68:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -3077,7 +3284,7 @@ function BrushEvent(type, {
   });
 }
 
-},{}],68:[function(require,module,exports){
+},{}],69:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -3111,7 +3318,7 @@ var _brush = _interopRequireWildcard(require("./brush.js"));
 function _getRequireWildcardCache(nodeInterop) { if (typeof WeakMap !== "function") return null; var cacheBabelInterop = new WeakMap(); var cacheNodeInterop = new WeakMap(); return (_getRequireWildcardCache = function (nodeInterop) { return nodeInterop ? cacheNodeInterop : cacheBabelInterop; })(nodeInterop); }
 function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(nodeInterop); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (key !== "default" && Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
 
-},{"./brush.js":65}],69:[function(require,module,exports){
+},{"./brush.js":66}],70:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -3127,7 +3334,7 @@ function _default(event) {
   event.stopImmediatePropagation();
 }
 
-},{}],70:[function(require,module,exports){
+},{}],71:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -3137,7 +3344,7 @@ exports.slice = void 0;
 var slice = Array.prototype.slice;
 exports.slice = slice;
 
-},{}],71:[function(require,module,exports){
+},{}],72:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -3298,7 +3505,7 @@ function chord(directed, transpose) {
   return chord;
 }
 
-},{"./math.js":74}],72:[function(require,module,exports){
+},{"./math.js":75}],73:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -3311,7 +3518,7 @@ function _default(x) {
   };
 }
 
-},{}],73:[function(require,module,exports){
+},{}],74:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -3352,7 +3559,7 @@ var _ribbon = _interopRequireWildcard(require("./ribbon.js"));
 function _getRequireWildcardCache(nodeInterop) { if (typeof WeakMap !== "function") return null; var cacheBabelInterop = new WeakMap(); var cacheNodeInterop = new WeakMap(); return (_getRequireWildcardCache = function (nodeInterop) { return nodeInterop ? cacheNodeInterop : cacheBabelInterop; })(nodeInterop); }
 function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(nodeInterop); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (key !== "default" && Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
 
-},{"./chord.js":71,"./ribbon.js":75}],74:[function(require,module,exports){
+},{"./chord.js":72,"./ribbon.js":76}],75:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -3376,7 +3583,7 @@ exports.max = max;
 var epsilon = 1e-12;
 exports.epsilon = epsilon;
 
-},{}],75:[function(require,module,exports){
+},{}],76:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -3494,7 +3701,7 @@ function ribbonArrow() {
   return ribbon(defaultArrowheadRadius);
 }
 
-},{"./array.js":70,"./constant.js":72,"./math.js":74,"d3-path":275}],76:[function(require,module,exports){
+},{"./array.js":71,"./constant.js":73,"./math.js":75,"d3-path":276}],77:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -3864,7 +4071,7 @@ function hsl2rgb(h, m1, m2) {
   return (h < 60 ? m1 + (m2 - m1) * h / 60 : h < 180 ? m2 : h < 240 ? m1 + (m2 - m1) * (240 - h) / 60 : m1) * 255;
 }
 
-},{"./define.js":78}],77:[function(require,module,exports){
+},{"./define.js":79}],78:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -3927,7 +4134,7 @@ function Cubehelix(h, s, l, opacity) {
   }
 }));
 
-},{"./color.js":76,"./define.js":78,"./math.js":81}],78:[function(require,module,exports){
+},{"./color.js":77,"./define.js":79,"./math.js":82}],79:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -3945,7 +4152,7 @@ function extend(parent, definition) {
   return prototype;
 }
 
-},{}],79:[function(require,module,exports){
+},{}],80:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -4006,7 +4213,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 function _getRequireWildcardCache(nodeInterop) { if (typeof WeakMap !== "function") return null; var cacheBabelInterop = new WeakMap(); var cacheNodeInterop = new WeakMap(); return (_getRequireWildcardCache = function (nodeInterop) { return nodeInterop ? cacheNodeInterop : cacheBabelInterop; })(nodeInterop); }
 function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(nodeInterop); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (key !== "default" && Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
 
-},{"./color.js":76,"./cubehelix.js":77,"./lab.js":80}],80:[function(require,module,exports){
+},{"./color.js":77,"./cubehelix.js":78,"./lab.js":81}],81:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -4125,7 +4332,7 @@ function hcl2lab(o) {
   }
 }));
 
-},{"./color.js":76,"./define.js":78,"./math.js":81}],81:[function(require,module,exports){
+},{"./color.js":77,"./define.js":79,"./math.js":82}],82:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -4137,7 +4344,7 @@ exports.radians = radians;
 const degrees = 180 / Math.PI;
 exports.degrees = degrees;
 
-},{}],82:[function(require,module,exports){
+},{}],83:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -4152,7 +4359,7 @@ function _default(ring) {
   return area;
 }
 
-},{}],83:[function(require,module,exports){
+},{}],84:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -4163,7 +4370,7 @@ var array = Array.prototype;
 var slice = array.slice;
 exports.slice = slice;
 
-},{}],84:[function(require,module,exports){
+},{}],85:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -4174,9 +4381,9 @@ function _default(a, b) {
   return a - b;
 }
 
-},{}],85:[function(require,module,exports){
-arguments[4][66][0].apply(exports,arguments)
-},{"dup":66}],86:[function(require,module,exports){
+},{}],86:[function(require,module,exports){
+arguments[4][67][0].apply(exports,arguments)
+},{"dup":67}],87:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -4217,7 +4424,7 @@ function within(p, q, r) {
   return p <= q && q <= r || r <= q && q <= p;
 }
 
-},{}],87:[function(require,module,exports){
+},{}],88:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -4413,7 +4620,7 @@ function _default() {
   return contours;
 }
 
-},{"./area.js":82,"./array.js":83,"./ascending.js":84,"./constant.js":85,"./contains.js":86,"./noop.js":90,"d3-array":24}],88:[function(require,module,exports){
+},{"./area.js":83,"./array.js":84,"./ascending.js":85,"./constant.js":86,"./contains.js":87,"./noop.js":91,"d3-array":25}],89:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -4557,7 +4764,7 @@ function _default() {
   return density;
 }
 
-},{"./array.js":83,"./constant.js":85,"./contours.js":87,"d3-array":24}],89:[function(require,module,exports){
+},{"./array.js":84,"./constant.js":86,"./contours.js":88,"d3-array":25}],90:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -4579,7 +4786,7 @@ var _contours = _interopRequireDefault(require("./contours.js"));
 var _density = _interopRequireDefault(require("./density.js"));
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./contours.js":87,"./density.js":88}],90:[function(require,module,exports){
+},{"./contours.js":88,"./density.js":89}],91:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -4588,7 +4795,7 @@ Object.defineProperty(exports, "__esModule", {
 exports.default = _default;
 function _default() {}
 
-},{}],91:[function(require,module,exports){
+},{}],92:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -4872,7 +5079,7 @@ function* flatIterable(points, fx, fy, that) {
   }
 }
 
-},{"./path.js":93,"./polygon.js":94,"./voronoi.js":95,"delaunator":563}],92:[function(require,module,exports){
+},{"./path.js":94,"./polygon.js":95,"./voronoi.js":96,"delaunator":558}],93:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -4894,7 +5101,7 @@ var _delaunay = _interopRequireDefault(require("./delaunay.js"));
 var _voronoi = _interopRequireDefault(require("./voronoi.js"));
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./delaunay.js":91,"./voronoi.js":95}],93:[function(require,module,exports){
+},{"./delaunay.js":92,"./voronoi.js":96}],94:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -4939,7 +5146,7 @@ class Path {
 }
 exports.default = Path;
 
-},{}],94:[function(require,module,exports){
+},{}],95:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -4965,7 +5172,7 @@ class Polygon {
 }
 exports.default = Polygon;
 
-},{}],95:[function(require,module,exports){
+},{}],96:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -5349,7 +5556,7 @@ class Voronoi {
 }
 exports.default = Voronoi;
 
-},{"./path.js":93,"./polygon.js":94}],96:[function(require,module,exports){
+},{"./path.js":94,"./polygon.js":95}],97:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -5443,7 +5650,7 @@ function set(type, name, callback) {
 var _default = dispatch;
 exports.default = _default;
 
-},{}],97:[function(require,module,exports){
+},{}],98:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -5458,9 +5665,9 @@ Object.defineProperty(exports, "dispatch", {
 var _dispatch = _interopRequireDefault(require("./dispatch.js"));
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./dispatch.js":96}],98:[function(require,module,exports){
-arguments[4][66][0].apply(exports,arguments)
-},{"dup":66}],99:[function(require,module,exports){
+},{"./dispatch.js":97}],99:[function(require,module,exports){
+arguments[4][67][0].apply(exports,arguments)
+},{"dup":67}],100:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -5646,7 +5853,7 @@ function _default() {
   return drag;
 }
 
-},{"./constant.js":98,"./event.js":100,"./nodrag.js":102,"./noevent.js":103,"d3-dispatch":97,"d3-selection":392}],100:[function(require,module,exports){
+},{"./constant.js":99,"./event.js":101,"./nodrag.js":103,"./noevent.js":104,"d3-dispatch":98,"d3-selection":393}],101:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -5726,7 +5933,7 @@ DragEvent.prototype.on = function () {
   return value === this._ ? this : value;
 };
 
-},{}],101:[function(require,module,exports){
+},{}],102:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -5756,7 +5963,7 @@ function _getRequireWildcardCache(nodeInterop) { if (typeof WeakMap !== "functio
 function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(nodeInterop); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (key !== "default" && Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./drag.js":99,"./nodrag.js":102}],102:[function(require,module,exports){
+},{"./drag.js":100,"./nodrag.js":103}],103:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -5795,7 +6002,7 @@ function yesdrag(view, noclick) {
   }
 }
 
-},{"./noevent.js":103,"d3-selection":392}],103:[function(require,module,exports){
+},{"./noevent.js":104,"d3-selection":393}],104:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -5823,7 +6030,7 @@ function _default(event) {
   event.stopImmediatePropagation();
 }
 
-},{}],104:[function(require,module,exports){
+},{}],105:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -5847,7 +6054,7 @@ function autoType(object) {
 // https://github.com/d3/d3-dsv/issues/45
 const fixtz = new Date("2019-01-01T00:00").getHours() || new Date("2019-07-01T00:00").getHours();
 
-},{}],105:[function(require,module,exports){
+},{}],106:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -5872,7 +6079,7 @@ exports.csvFormatRow = csvFormatRow;
 var csvFormatValue = csv.formatValue;
 exports.csvFormatValue = csvFormatValue;
 
-},{"./dsv.js":106}],106:[function(require,module,exports){
+},{"./dsv.js":107}],107:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6026,7 +6233,7 @@ function _default(delimiter) {
   };
 }
 
-},{}],107:[function(require,module,exports){
+},{}],108:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6134,7 +6341,7 @@ var _tsv = require("./tsv.js");
 var _autoType = _interopRequireDefault(require("./autoType.js"));
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./autoType.js":104,"./csv.js":105,"./dsv.js":106,"./tsv.js":108}],108:[function(require,module,exports){
+},{"./autoType.js":105,"./csv.js":106,"./dsv.js":107,"./tsv.js":109}],109:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6159,7 +6366,7 @@ exports.tsvFormatRow = tsvFormatRow;
 var tsvFormatValue = tsv.formatValue;
 exports.tsvFormatValue = tsvFormatValue;
 
-},{"./dsv.js":106}],109:[function(require,module,exports){
+},{"./dsv.js":107}],110:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6195,7 +6402,7 @@ var backInOut = function custom(s) {
 }(overshoot);
 exports.backInOut = backInOut;
 
-},{}],110:[function(require,module,exports){
+},{}],111:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6224,7 +6431,7 @@ function bounceInOut(t) {
   return ((t *= 2) <= 1 ? 1 - bounceOut(1 - t) : bounceOut(t - 1) + 1) / 2;
 }
 
-},{}],111:[function(require,module,exports){
+},{}],112:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6243,7 +6450,7 @@ function circleInOut(t) {
   return ((t *= 2) <= 1 ? 1 - Math.sqrt(1 - t * t) : Math.sqrt(1 - (t -= 2) * t) + 1) / 2;
 }
 
-},{}],112:[function(require,module,exports){
+},{}],113:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6262,7 +6469,7 @@ function cubicInOut(t) {
   return ((t *= 2) <= 1 ? t * t * t : (t -= 2) * t * t + 2) / 2;
 }
 
-},{}],113:[function(require,module,exports){
+},{}],114:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6316,7 +6523,7 @@ var elasticInOut = function custom(a, p) {
 }(amplitude, period);
 exports.elasticInOut = elasticInOut;
 
-},{"./math.js":117}],114:[function(require,module,exports){
+},{"./math.js":118}],115:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6336,7 +6543,7 @@ function expInOut(t) {
   return ((t *= 2) <= 1 ? (0, _math.tpmt)(1 - t) : 2 - (0, _math.tpmt)(t - 1)) / 2;
 }
 
-},{"./math.js":117}],115:[function(require,module,exports){
+},{"./math.js":118}],116:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6575,7 +6782,7 @@ var _bounce = require("./bounce.js");
 var _back = require("./back.js");
 var _elastic = require("./elastic.js");
 
-},{"./back.js":109,"./bounce.js":110,"./circle.js":111,"./cubic.js":112,"./elastic.js":113,"./exp.js":114,"./linear.js":116,"./poly.js":118,"./quad.js":119,"./sin.js":120}],116:[function(require,module,exports){
+},{"./back.js":110,"./bounce.js":111,"./circle.js":112,"./cubic.js":113,"./elastic.js":114,"./exp.js":115,"./linear.js":117,"./poly.js":119,"./quad.js":120,"./sin.js":121}],117:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6585,7 +6792,7 @@ exports.linear = void 0;
 const linear = t => +t;
 exports.linear = linear;
 
-},{}],117:[function(require,module,exports){
+},{}],118:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6597,7 +6804,7 @@ function tpmt(x) {
   return (Math.pow(2, -10 * x) - 0.0009765625) * 1.0009775171065494;
 }
 
-},{}],118:[function(require,module,exports){
+},{}],119:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6633,7 +6840,7 @@ var polyInOut = function custom(e) {
 }(exponent);
 exports.polyInOut = polyInOut;
 
-},{}],119:[function(require,module,exports){
+},{}],120:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6652,7 +6859,7 @@ function quadInOut(t) {
   return ((t *= 2) <= 1 ? t * t : --t * (2 - t) + 1) / 2;
 }
 
-},{}],120:[function(require,module,exports){
+},{}],121:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6673,7 +6880,7 @@ function sinInOut(t) {
   return (1 - Math.cos(pi * t)) / 2;
 }
 
-},{}],121:[function(require,module,exports){
+},{}],122:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6688,7 +6895,7 @@ function _default(input, init) {
   return fetch(input, init).then(responseBlob);
 }
 
-},{}],122:[function(require,module,exports){
+},{}],123:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6703,7 +6910,7 @@ function _default(input, init) {
   return fetch(input, init).then(responseArrayBuffer);
 }
 
-},{}],123:[function(require,module,exports){
+},{}],124:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6735,7 +6942,7 @@ exports.csv = csv;
 var tsv = dsvParse(_d3Dsv.tsvParse);
 exports.tsv = tsv;
 
-},{"./text.js":127,"d3-dsv":107}],124:[function(require,module,exports){
+},{"./text.js":128,"d3-dsv":108}],125:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6754,7 +6961,7 @@ function _default(input, init) {
   });
 }
 
-},{}],125:[function(require,module,exports){
+},{}],126:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6837,7 +7044,7 @@ function _getRequireWildcardCache(nodeInterop) { if (typeof WeakMap !== "functio
 function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(nodeInterop); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (key !== "default" && Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./blob.js":121,"./buffer.js":122,"./dsv.js":123,"./image.js":124,"./json.js":126,"./text.js":127,"./xml.js":128}],126:[function(require,module,exports){
+},{"./blob.js":122,"./buffer.js":123,"./dsv.js":124,"./image.js":125,"./json.js":127,"./text.js":128,"./xml.js":129}],127:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6853,7 +7060,7 @@ function _default(input, init) {
   return fetch(input, init).then(responseJson);
 }
 
-},{}],127:[function(require,module,exports){
+},{}],128:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6868,7 +7075,7 @@ function _default(input, init) {
   return fetch(input, init).then(responseText);
 }
 
-},{}],128:[function(require,module,exports){
+},{}],129:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6887,7 +7094,7 @@ exports.html = html;
 var svg = parser("image/svg+xml");
 exports.svg = svg;
 
-},{"./text.js":127}],129:[function(require,module,exports){
+},{"./text.js":128}],130:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -6927,7 +7134,7 @@ function _default(x, y) {
   return force;
 }
 
-},{}],130:[function(require,module,exports){
+},{}],131:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -7027,9 +7234,9 @@ function _default(radius) {
   return force;
 }
 
-},{"./constant.js":131,"./jiggle.js":133,"d3-quadtree":289}],131:[function(require,module,exports){
-arguments[4][72][0].apply(exports,arguments)
-},{"dup":72}],132:[function(require,module,exports){
+},{"./constant.js":132,"./jiggle.js":134,"d3-quadtree":290}],132:[function(require,module,exports){
+arguments[4][73][0].apply(exports,arguments)
+},{"dup":73}],133:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -7093,7 +7300,7 @@ var _x = _interopRequireDefault(require("./x.js"));
 var _y = _interopRequireDefault(require("./y.js"));
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./center.js":129,"./collide.js":130,"./link.js":135,"./manyBody.js":136,"./radial.js":137,"./simulation.js":138,"./x.js":139,"./y.js":140}],133:[function(require,module,exports){
+},{"./center.js":130,"./collide.js":131,"./link.js":136,"./manyBody.js":137,"./radial.js":138,"./simulation.js":139,"./x.js":140,"./y.js":141}],134:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -7104,7 +7311,7 @@ function _default(random) {
   return (random() - 0.5) * 1e-6;
 }
 
-},{}],134:[function(require,module,exports){
+},{}],135:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -7121,7 +7328,7 @@ function _default() {
   return () => (s = (a * s + c) % m) / m;
 }
 
-},{}],135:[function(require,module,exports){
+},{}],136:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -7225,7 +7432,7 @@ function _default(links) {
   return force;
 }
 
-},{"./constant.js":131,"./jiggle.js":133}],136:[function(require,module,exports){
+},{"./constant.js":132,"./jiggle.js":134}],137:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -7345,7 +7552,7 @@ function _default() {
   return force;
 }
 
-},{"./constant.js":131,"./jiggle.js":133,"./simulation.js":138,"d3-quadtree":289}],137:[function(require,module,exports){
+},{"./constant.js":132,"./jiggle.js":134,"./simulation.js":139,"d3-quadtree":290}],138:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -7402,7 +7609,7 @@ function _default(radius, x, y) {
   return force;
 }
 
-},{"./constant.js":131}],138:[function(require,module,exports){
+},{"./constant.js":132}],139:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -7538,7 +7745,7 @@ function _default(nodes) {
   };
 }
 
-},{"./lcg.js":134,"d3-dispatch":97,"d3-timer":523}],139:[function(require,module,exports){
+},{"./lcg.js":135,"d3-dispatch":98,"d3-timer":518}],140:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -7581,7 +7788,7 @@ function _default(x) {
   return force;
 }
 
-},{"./constant.js":131}],140:[function(require,module,exports){
+},{"./constant.js":132}],141:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -7624,7 +7831,7 @@ function _default(y) {
   return force;
 }
 
-},{"./constant.js":131}],141:[function(require,module,exports){
+},{"./constant.js":132}],142:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -7651,7 +7858,7 @@ function defaultLocale(definition) {
   return locale;
 }
 
-},{"./locale.js":153}],142:[function(require,module,exports){
+},{"./locale.js":154}],143:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -7663,7 +7870,7 @@ function _default(x) {
   return x = (0, _formatDecimal.formatDecimalParts)(Math.abs(x)), x ? x[1] : NaN;
 }
 
-},{"./formatDecimal.js":143}],143:[function(require,module,exports){
+},{"./formatDecimal.js":144}],144:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -7688,7 +7895,7 @@ function formatDecimalParts(x, p) {
   return [coefficient.length > 1 ? coefficient[0] + coefficient.slice(2) : coefficient, +x.slice(i + 1)];
 }
 
-},{}],144:[function(require,module,exports){
+},{}],145:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -7712,7 +7919,7 @@ function _default(grouping, thousands) {
   };
 }
 
-},{}],145:[function(require,module,exports){
+},{}],146:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -7727,7 +7934,7 @@ function _default(numerals) {
   };
 }
 
-},{}],146:[function(require,module,exports){
+},{}],147:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -7748,7 +7955,7 @@ function _default(x, p) {
   return i === n ? coefficient : i > n ? coefficient + new Array(i - n + 1).join("0") : i > 0 ? coefficient.slice(0, i) + "." + coefficient.slice(i) : "0." + new Array(1 - i).join("0") + (0, _formatDecimal.formatDecimalParts)(x, Math.max(0, p + i - 1))[0]; // less than 1y!
 }
 
-},{"./formatDecimal.js":143}],147:[function(require,module,exports){
+},{"./formatDecimal.js":144}],148:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -7764,7 +7971,7 @@ function _default(x, p) {
   return exponent < 0 ? "0." + new Array(-exponent).join("0") + coefficient : coefficient.length > exponent + 1 ? coefficient.slice(0, exponent + 1) + "." + coefficient.slice(exponent + 1) : coefficient + new Array(exponent - coefficient.length + 2).join("0");
 }
 
-},{"./formatDecimal.js":143}],148:[function(require,module,exports){
+},{"./formatDecimal.js":144}],149:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -7808,7 +8015,7 @@ FormatSpecifier.prototype.toString = function () {
   return this.fill + this.align + this.sign + this.symbol + (this.zero ? "0" : "") + (this.width === undefined ? "" : Math.max(1, this.width | 0)) + (this.comma ? "," : "") + (this.precision === undefined ? "" : "." + Math.max(0, this.precision | 0)) + (this.trim ? "~" : "") + this.type;
 };
 
-},{}],149:[function(require,module,exports){
+},{}],150:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -7835,7 +8042,7 @@ function _default(s) {
   return i0 > 0 ? s.slice(0, i0) + s.slice(i1 + 1) : s;
 }
 
-},{}],150:[function(require,module,exports){
+},{}],151:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -7863,9 +8070,9 @@ var _default = {
 };
 exports.default = _default;
 
-},{"./formatDecimal.js":143,"./formatPrefixAuto.js":146,"./formatRounded.js":147}],151:[function(require,module,exports){
-arguments[4][63][0].apply(exports,arguments)
-},{"dup":63}],152:[function(require,module,exports){
+},{"./formatDecimal.js":144,"./formatPrefixAuto.js":147,"./formatRounded.js":148}],152:[function(require,module,exports){
+arguments[4][64][0].apply(exports,arguments)
+},{"dup":64}],153:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -7935,7 +8142,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 function _getRequireWildcardCache(nodeInterop) { if (typeof WeakMap !== "function") return null; var cacheBabelInterop = new WeakMap(); var cacheNodeInterop = new WeakMap(); return (_getRequireWildcardCache = function (nodeInterop) { return nodeInterop ? cacheNodeInterop : cacheBabelInterop; })(nodeInterop); }
 function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(nodeInterop); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (key !== "default" && Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
 
-},{"./defaultLocale.js":141,"./formatSpecifier.js":148,"./locale.js":153,"./precisionFixed.js":154,"./precisionPrefix.js":155,"./precisionRound.js":156}],153:[function(require,module,exports){
+},{"./defaultLocale.js":142,"./formatSpecifier.js":149,"./locale.js":154,"./precisionFixed.js":155,"./precisionPrefix.js":156,"./precisionRound.js":157}],154:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -8089,7 +8296,7 @@ function _default(locale) {
   };
 }
 
-},{"./exponent.js":142,"./formatGroup.js":144,"./formatNumerals.js":145,"./formatPrefixAuto.js":146,"./formatSpecifier.js":148,"./formatTrim.js":149,"./formatTypes.js":150,"./identity.js":151}],154:[function(require,module,exports){
+},{"./exponent.js":143,"./formatGroup.js":145,"./formatNumerals.js":146,"./formatPrefixAuto.js":147,"./formatSpecifier.js":149,"./formatTrim.js":150,"./formatTypes.js":151,"./identity.js":152}],155:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -8102,7 +8309,7 @@ function _default(step) {
   return Math.max(0, -(0, _exponent.default)(Math.abs(step)));
 }
 
-},{"./exponent.js":142}],155:[function(require,module,exports){
+},{"./exponent.js":143}],156:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -8115,7 +8322,7 @@ function _default(step, value) {
   return Math.max(0, Math.max(-8, Math.min(8, Math.floor((0, _exponent.default)(value) / 3))) * 3 - (0, _exponent.default)(Math.abs(step)));
 }
 
-},{"./exponent.js":142}],156:[function(require,module,exports){
+},{"./exponent.js":143}],157:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -8129,7 +8336,7 @@ function _default(step, max) {
   return Math.max(0, (0, _exponent.default)(max) - (0, _exponent.default)(step)) + 1;
 }
 
-},{"./exponent.js":142}],157:[function(require,module,exports){
+},{"./exponent.js":143}],158:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -8209,7 +8416,7 @@ function _default(object) {
   return areaSum * 2;
 }
 
-},{"./math.js":179,"./noop.js":180,"./stream.js":213,"d3-array":24}],158:[function(require,module,exports){
+},{"./math.js":180,"./noop.js":181,"./stream.js":214,"d3-array":25}],159:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -8380,7 +8587,7 @@ function _default(feature) {
   return lambda0 === Infinity || phi0 === Infinity ? [[NaN, NaN], [NaN, NaN]] : [[lambda0, phi0], [lambda1, phi1]];
 }
 
-},{"./area.js":157,"./cartesian.js":159,"./math.js":179,"./stream.js":213,"d3-array":24}],159:[function(require,module,exports){
+},{"./area.js":158,"./cartesian.js":160,"./math.js":180,"./stream.js":214,"d3-array":25}],160:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -8424,7 +8631,7 @@ function cartesianNormalizeInPlace(d) {
   d[0] /= l, d[1] /= l, d[2] /= l;
 }
 
-},{"./math.js":179}],160:[function(require,module,exports){
+},{"./math.js":180}],161:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -8560,7 +8767,7 @@ function _default(object) {
   return [(0, _math.atan2)(y, x) * _math.degrees, (0, _math.asin)(z / m) * _math.degrees];
 }
 
-},{"./math.js":179,"./noop.js":180,"./stream.js":213,"d3-array":24}],161:[function(require,module,exports){
+},{"./math.js":180,"./noop.js":181,"./stream.js":214,"d3-array":25}],162:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -8639,7 +8846,7 @@ function _default() {
   return circle;
 }
 
-},{"./cartesian.js":159,"./constant.js":171,"./math.js":179,"./rotation.js":212}],162:[function(require,module,exports){
+},{"./cartesian.js":160,"./constant.js":172,"./math.js":180,"./rotation.js":213}],163:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -8732,7 +8939,7 @@ function clipAntimeridianInterpolate(from, to, direction, stream) {
   }
 }
 
-},{"../math.js":179,"./index.js":166}],163:[function(require,module,exports){
+},{"../math.js":180,"./index.js":167}],164:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -8764,7 +8971,7 @@ function _default() {
   };
 }
 
-},{"../noop.js":180}],164:[function(require,module,exports){
+},{"../noop.js":181}],165:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -8939,7 +9146,7 @@ function _default(radius) {
   return (0, _index.default)(visible, clipLine, interpolate, smallRadius ? [0, -radius] : [-_math.pi, radius - _math.pi]);
 }
 
-},{"../cartesian.js":159,"../circle.js":161,"../math.js":179,"../pointEqual.js":188,"./index.js":166}],165:[function(require,module,exports){
+},{"../cartesian.js":160,"../circle.js":162,"../math.js":180,"../pointEqual.js":189,"./index.js":167}],166:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -8966,7 +9173,7 @@ function _default() {
   };
 }
 
-},{"./rectangle.js":168}],166:[function(require,module,exports){
+},{"./rectangle.js":169}],167:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -9092,7 +9299,7 @@ function compareIntersection(a, b) {
   return ((a = a.x)[0] < 0 ? a[1] - _math.halfPi - _math.epsilon : _math.halfPi - a[1]) - ((b = b.x)[0] < 0 ? b[1] - _math.halfPi - _math.epsilon : _math.halfPi - b[1]);
 }
 
-},{"../math.js":179,"../polygonContains.js":189,"./buffer.js":163,"./rejoin.js":169,"d3-array":24}],167:[function(require,module,exports){
+},{"../math.js":180,"../polygonContains.js":190,"./buffer.js":164,"./rejoin.js":170,"d3-array":25}],168:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -9154,7 +9361,7 @@ function _default(a, b, x0, y0, x1, y1) {
   return true;
 }
 
-},{}],168:[function(require,module,exports){
+},{}],169:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -9316,7 +9523,7 @@ function clipRectangle(x0, y0, x1, y1) {
   };
 }
 
-},{"../math.js":179,"./buffer.js":163,"./line.js":167,"./rejoin.js":169,"d3-array":24}],169:[function(require,module,exports){
+},{"../math.js":180,"./buffer.js":164,"./line.js":168,"./rejoin.js":170,"d3-array":25}],170:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -9421,7 +9628,7 @@ function link(array) {
   b.p = a;
 }
 
-},{"../math.js":179,"../pointEqual.js":188}],170:[function(require,module,exports){
+},{"../math.js":180,"../pointEqual.js":189}],171:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -9438,9 +9645,9 @@ function _default(a, b) {
   return compose;
 }
 
-},{}],171:[function(require,module,exports){
-arguments[4][72][0].apply(exports,arguments)
-},{"dup":72}],172:[function(require,module,exports){
+},{}],172:[function(require,module,exports){
+arguments[4][73][0].apply(exports,arguments)
+},{"dup":73}],173:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -9537,7 +9744,7 @@ function _default(object, point) {
   return (object && containsObjectType.hasOwnProperty(object.type) ? containsObjectType[object.type] : containsGeometry)(object, point);
 }
 
-},{"./distance.js":173,"./math.js":179,"./polygonContains.js":189}],173:[function(require,module,exports){
+},{"./distance.js":174,"./math.js":180,"./polygonContains.js":190}],174:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -9557,7 +9764,7 @@ function _default(a, b) {
   return (0, _length.default)(object);
 }
 
-},{"./length.js":178}],174:[function(require,module,exports){
+},{"./length.js":179}],175:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -9677,7 +9884,7 @@ function graticule10() {
   return graticule()();
 }
 
-},{"./math.js":179,"d3-array":24}],175:[function(require,module,exports){
+},{"./math.js":180,"d3-array":25}],176:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -9687,7 +9894,7 @@ exports.default = void 0;
 var _default = x => x;
 exports.default = _default;
 
-},{}],176:[function(require,module,exports){
+},{}],177:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10025,7 +10232,7 @@ function _getRequireWildcardCache(nodeInterop) { if (typeof WeakMap !== "functio
 function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(nodeInterop); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (key !== "default" && Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./area.js":157,"./bounds.js":158,"./centroid.js":160,"./circle.js":161,"./clip/antimeridian.js":162,"./clip/circle.js":164,"./clip/extent.js":165,"./clip/rectangle.js":168,"./contains.js":172,"./distance.js":173,"./graticule.js":174,"./interpolate.js":177,"./length.js":178,"./path/index.js":185,"./projection/albers.js":190,"./projection/albersUsa.js":191,"./projection/azimuthalEqualArea.js":193,"./projection/azimuthalEquidistant.js":194,"./projection/conicConformal.js":196,"./projection/conicEqualArea.js":197,"./projection/conicEquidistant.js":198,"./projection/equalEarth.js":200,"./projection/equirectangular.js":201,"./projection/gnomonic.js":203,"./projection/identity.js":204,"./projection/index.js":205,"./projection/mercator.js":206,"./projection/naturalEarth1.js":207,"./projection/orthographic.js":208,"./projection/stereographic.js":210,"./projection/transverseMercator.js":211,"./rotation.js":212,"./stream.js":213,"./transform.js":214}],177:[function(require,module,exports){
+},{"./area.js":158,"./bounds.js":159,"./centroid.js":161,"./circle.js":162,"./clip/antimeridian.js":163,"./clip/circle.js":165,"./clip/extent.js":166,"./clip/rectangle.js":169,"./contains.js":173,"./distance.js":174,"./graticule.js":175,"./interpolate.js":178,"./length.js":179,"./path/index.js":186,"./projection/albers.js":191,"./projection/albersUsa.js":192,"./projection/azimuthalEqualArea.js":194,"./projection/azimuthalEquidistant.js":195,"./projection/conicConformal.js":197,"./projection/conicEqualArea.js":198,"./projection/conicEquidistant.js":199,"./projection/equalEarth.js":201,"./projection/equirectangular.js":202,"./projection/gnomonic.js":204,"./projection/identity.js":205,"./projection/index.js":206,"./projection/mercator.js":207,"./projection/naturalEarth1.js":208,"./projection/orthographic.js":209,"./projection/stereographic.js":211,"./projection/transverseMercator.js":212,"./rotation.js":213,"./stream.js":214,"./transform.js":215}],178:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10062,7 +10269,7 @@ function _default(a, b) {
   return interpolate;
 }
 
-},{"./math.js":179}],178:[function(require,module,exports){
+},{"./math.js":180}],179:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10114,7 +10321,7 @@ function _default(object) {
   return +lengthSum;
 }
 
-},{"./math.js":179,"./noop.js":180,"./stream.js":213,"d3-array":24}],179:[function(require,module,exports){
+},{"./math.js":180,"./noop.js":181,"./stream.js":214,"d3-array":25}],180:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10182,7 +10389,7 @@ function haversin(x) {
   return (x = sin(x / 2)) * x;
 }
 
-},{}],180:[function(require,module,exports){
+},{}],181:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10191,7 +10398,7 @@ Object.defineProperty(exports, "__esModule", {
 exports.default = noop;
 function noop() {}
 
-},{}],181:[function(require,module,exports){
+},{}],182:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10244,7 +10451,7 @@ function areaRingEnd() {
 var _default = areaStream;
 exports.default = _default;
 
-},{"../math.js":179,"../noop.js":180,"d3-array":24}],182:[function(require,module,exports){
+},{"../math.js":180,"../noop.js":181,"d3-array":25}],183:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10278,7 +10485,7 @@ function boundsPoint(x, y) {
 var _default = boundsStream;
 exports.default = _default;
 
-},{"../noop.js":180}],183:[function(require,module,exports){
+},{"../noop.js":181}],184:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10370,7 +10577,7 @@ function centroidPointRing(x, y) {
 var _default = centroidStream;
 exports.default = _default;
 
-},{"../math.js":179}],184:[function(require,module,exports){
+},{"../math.js":180}],185:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10425,7 +10632,7 @@ PathContext.prototype = {
   result: _noop.default
 };
 
-},{"../math.js":179,"../noop.js":180}],185:[function(require,module,exports){
+},{"../math.js":180,"../noop.js":181}],186:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10485,7 +10692,7 @@ function _default(projection, context) {
   return path.projection(projection).context(context);
 }
 
-},{"../identity.js":175,"../stream.js":213,"./area.js":181,"./bounds.js":182,"./centroid.js":183,"./context.js":184,"./measure.js":186,"./string.js":187}],186:[function(require,module,exports){
+},{"../identity.js":176,"../stream.js":214,"./area.js":182,"./bounds.js":183,"./centroid.js":184,"./context.js":185,"./measure.js":187,"./string.js":188}],187:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10535,7 +10742,7 @@ function lengthPoint(x, y) {
 var _default = lengthStream;
 exports.default = _default;
 
-},{"../math.js":179,"../noop.js":180,"d3-array":24}],187:[function(require,module,exports){
+},{"../math.js":180,"../noop.js":181,"d3-array":25}],188:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10600,7 +10807,7 @@ function circle(radius) {
   return "m0," + radius + "a" + radius + "," + radius + " 0 1,1 0," + -2 * radius + "a" + radius + "," + radius + " 0 1,1 0," + 2 * radius + "z";
 }
 
-},{}],188:[function(require,module,exports){
+},{}],189:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10612,7 +10819,7 @@ function _default(a, b) {
   return (0, _math.abs)(a[0] - b[0]) < _math.epsilon && (0, _math.abs)(a[1] - b[1]) < _math.epsilon;
 }
 
-},{"./math.js":179}],189:[function(require,module,exports){
+},{"./math.js":180}],190:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10686,7 +10893,7 @@ function _default(polygon, point) {
   return (angle < -_math.epsilon || angle < _math.epsilon && sum < -_math.epsilon2) ^ winding & 1;
 }
 
-},{"./cartesian.js":159,"./math.js":179,"d3-array":24}],190:[function(require,module,exports){
+},{"./cartesian.js":160,"./math.js":180,"d3-array":25}],191:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10699,7 +10906,7 @@ function _default() {
   return (0, _conicEqualArea.default)().parallels([29.5, 45.5]).scale(1070).translate([480, 250]).rotate([96, 0]).center([-0.6, 38.7]);
 }
 
-},{"./conicEqualArea.js":197}],191:[function(require,module,exports){
+},{"./conicEqualArea.js":198}],192:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10819,7 +11026,7 @@ function _default() {
   return albersUsa.scale(1070);
 }
 
-},{"../math.js":179,"./albers.js":190,"./conicEqualArea.js":197,"./fit.js":202}],192:[function(require,module,exports){
+},{"../math.js":180,"./albers.js":191,"./conicEqualArea.js":198,"./fit.js":203}],193:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10847,7 +11054,7 @@ function azimuthalInvert(angle) {
   };
 }
 
-},{"../math.js":179}],193:[function(require,module,exports){
+},{"../math.js":180}],194:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10870,7 +11077,7 @@ function _default() {
   return (0, _index.default)(azimuthalEqualAreaRaw).scale(124.75).clipAngle(180 - 1e-3);
 }
 
-},{"../math.js":179,"./azimuthal.js":192,"./index.js":205}],194:[function(require,module,exports){
+},{"../math.js":180,"./azimuthal.js":193,"./index.js":206}],195:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10893,7 +11100,7 @@ function _default() {
   return (0, _index.default)(azimuthalEquidistantRaw).scale(79.4188).clipAngle(180 - 1e-3);
 }
 
-},{"../math.js":179,"./azimuthal.js":192,"./index.js":205}],195:[function(require,module,exports){
+},{"../math.js":180,"./azimuthal.js":193,"./index.js":206}],196:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10913,7 +11120,7 @@ function conicProjection(projectAt) {
   return p;
 }
 
-},{"../math.js":179,"./index.js":205}],196:[function(require,module,exports){
+},{"../math.js":180,"./index.js":206}],197:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10954,7 +11161,7 @@ function _default() {
   return (0, _conic.conicProjection)(conicConformalRaw).scale(109.5).parallels([30, 30]);
 }
 
-},{"../math.js":179,"./conic.js":195,"./mercator.js":206}],197:[function(require,module,exports){
+},{"../math.js":180,"./conic.js":196,"./mercator.js":207}],198:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -10989,7 +11196,7 @@ function _default() {
   return (0, _conic.conicProjection)(conicEqualAreaRaw).scale(155.424).center([0, 33.6442]);
 }
 
-},{"../math.js":179,"./conic.js":195,"./cylindricalEqualArea.js":199}],198:[function(require,module,exports){
+},{"../math.js":180,"./conic.js":196,"./cylindricalEqualArea.js":200}],199:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -11022,7 +11229,7 @@ function _default() {
   return (0, _conic.conicProjection)(conicEquidistantRaw).scale(131.154).center([0, 13.9389]);
 }
 
-},{"../math.js":179,"./conic.js":195,"./equirectangular.js":201}],199:[function(require,module,exports){
+},{"../math.js":180,"./conic.js":196,"./equirectangular.js":202}],200:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -11041,7 +11248,7 @@ function cylindricalEqualAreaRaw(phi0) {
   return forward;
 }
 
-},{"../math.js":179}],200:[function(require,module,exports){
+},{"../math.js":180}],201:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -11080,7 +11287,7 @@ function _default() {
   return (0, _index.default)(equalEarthRaw).scale(177.158);
 }
 
-},{"../math.js":179,"./index.js":205}],201:[function(require,module,exports){
+},{"../math.js":180,"./index.js":206}],202:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -11098,7 +11305,7 @@ function _default() {
   return (0, _index.default)(equirectangularRaw).scale(152.63);
 }
 
-},{"./index.js":205}],202:[function(require,module,exports){
+},{"./index.js":206}],203:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -11152,7 +11359,7 @@ function fitHeight(projection, height, object) {
   }, object);
 }
 
-},{"../path/bounds.js":182,"../stream.js":213}],203:[function(require,module,exports){
+},{"../path/bounds.js":183,"../stream.js":214}],204:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -11174,7 +11381,7 @@ function _default() {
   return (0, _index.default)(gnomonicRaw).scale(144.049).clipAngle(60);
 }
 
-},{"../math.js":179,"./azimuthal.js":192,"./index.js":205}],204:[function(require,module,exports){
+},{"../math.js":180,"./azimuthal.js":193,"./index.js":206}],205:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -11279,7 +11486,7 @@ function _default() {
   return projection;
 }
 
-},{"../clip/rectangle.js":168,"../identity.js":175,"../math.js":179,"../transform.js":214,"./fit.js":202}],205:[function(require,module,exports){
+},{"../clip/rectangle.js":169,"../identity.js":176,"../math.js":180,"../transform.js":215,"./fit.js":203}],206:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -11462,7 +11669,7 @@ function projectionMutator(projectAt) {
   };
 }
 
-},{"../clip/antimeridian.js":162,"../clip/circle.js":164,"../clip/rectangle.js":168,"../compose.js":170,"../identity.js":175,"../math.js":179,"../rotation.js":212,"../transform.js":214,"./fit.js":202,"./resample.js":209}],206:[function(require,module,exports){
+},{"../clip/antimeridian.js":163,"../clip/circle.js":165,"../clip/rectangle.js":169,"../compose.js":171,"../identity.js":176,"../math.js":180,"../rotation.js":213,"../transform.js":215,"./fit.js":203,"./resample.js":210}],207:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -11515,7 +11722,7 @@ function mercatorProjection(project) {
   return reclip();
 }
 
-},{"../math.js":179,"../rotation.js":212,"./index.js":205}],207:[function(require,module,exports){
+},{"../math.js":180,"../rotation.js":213,"./index.js":206}],208:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -11546,7 +11753,7 @@ function _default() {
   return (0, _index.default)(naturalEarth1Raw).scale(175.295);
 }
 
-},{"../math.js":179,"./index.js":205}],208:[function(require,module,exports){
+},{"../math.js":180,"./index.js":206}],209:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -11566,7 +11773,7 @@ function _default() {
   return (0, _index.default)(orthographicRaw).scale(249.5).clipAngle(90 + _math.epsilon);
 }
 
-},{"../math.js":179,"./azimuthal.js":192,"./index.js":205}],209:[function(require,module,exports){
+},{"../math.js":180,"./azimuthal.js":193,"./index.js":206}],210:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -11674,7 +11881,7 @@ function resample(project, delta2) {
   };
 }
 
-},{"../cartesian.js":159,"../math.js":179,"../transform.js":214}],210:[function(require,module,exports){
+},{"../cartesian.js":160,"../math.js":180,"../transform.js":215}],211:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -11698,7 +11905,7 @@ function _default() {
   return (0, _index.default)(stereographicRaw).scale(250).clipAngle(142);
 }
 
-},{"../math.js":179,"./azimuthal.js":192,"./index.js":205}],211:[function(require,module,exports){
+},{"../math.js":180,"./azimuthal.js":193,"./index.js":206}],212:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -11727,7 +11934,7 @@ function _default() {
   return rotate([0, 0, 90]).scale(159.155);
 }
 
-},{"../math.js":179,"./mercator.js":206}],212:[function(require,module,exports){
+},{"../math.js":180,"./mercator.js":207}],213:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -11791,7 +11998,7 @@ function _default(rotate) {
   return forward;
 }
 
-},{"./compose.js":170,"./math.js":179}],213:[function(require,module,exports){
+},{"./compose.js":171,"./math.js":180}],214:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -11876,7 +12083,7 @@ function _default(object, stream) {
   }
 }
 
-},{}],214:[function(require,module,exports){
+},{}],215:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -11920,7 +12127,7 @@ TransformStream.prototype = {
   }
 };
 
-},{}],215:[function(require,module,exports){
+},{}],216:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -11936,7 +12143,7 @@ function required(f) {
   return f;
 }
 
-},{}],216:[function(require,module,exports){
+},{}],217:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -11962,7 +12169,7 @@ function shuffle(array, random) {
   return array;
 }
 
-},{}],217:[function(require,module,exports){
+},{}],218:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -12041,7 +12248,7 @@ function _default() {
   return cluster;
 }
 
-},{}],218:[function(require,module,exports){
+},{}],219:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -12058,7 +12265,7 @@ function _default(x) {
   };
 }
 
-},{}],219:[function(require,module,exports){
+},{}],220:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -12074,7 +12281,7 @@ function _default() {
   return nodes;
 }
 
-},{}],220:[function(require,module,exports){
+},{}],221:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -12092,7 +12299,7 @@ function _default() {
   return this.eachAfter(count);
 }
 
-},{}],221:[function(require,module,exports){
+},{}],222:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -12103,7 +12310,7 @@ function _default() {
   return Array.from(this);
 }
 
-},{}],222:[function(require,module,exports){
+},{}],223:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -12118,7 +12325,7 @@ function _default(callback, that) {
   return this;
 }
 
-},{}],223:[function(require,module,exports){
+},{}],224:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -12147,7 +12354,7 @@ function _default(callback, that) {
   return this;
 }
 
-},{}],224:[function(require,module,exports){
+},{}],225:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -12171,7 +12378,7 @@ function _default(callback, that) {
   return this;
 }
 
-},{}],225:[function(require,module,exports){
+},{}],226:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -12187,7 +12394,7 @@ function _default(callback, that) {
   }
 }
 
-},{}],226:[function(require,module,exports){
+},{}],227:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -12276,7 +12483,7 @@ Node.prototype = hierarchy.prototype = {
   [Symbol.iterator]: _iterator.default
 };
 
-},{"./ancestors.js":219,"./count.js":220,"./descendants.js":221,"./each.js":222,"./eachAfter.js":223,"./eachBefore.js":224,"./find.js":225,"./iterator.js":227,"./leaves.js":228,"./links.js":229,"./path.js":230,"./sort.js":231,"./sum.js":232}],227:[function(require,module,exports){
+},{"./ancestors.js":220,"./count.js":221,"./descendants.js":222,"./each.js":223,"./eachAfter.js":224,"./eachBefore.js":225,"./find.js":226,"./iterator.js":228,"./leaves.js":229,"./links.js":230,"./path.js":231,"./sort.js":232,"./sum.js":233}],228:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -12303,7 +12510,7 @@ function* _default() {
   } while (next.length);
 }
 
-},{}],228:[function(require,module,exports){
+},{}],229:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -12320,7 +12527,7 @@ function _default() {
   return leaves;
 }
 
-},{}],229:[function(require,module,exports){
+},{}],230:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -12342,7 +12549,7 @@ function _default() {
   return links;
 }
 
-},{}],230:[function(require,module,exports){
+},{}],231:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -12379,7 +12586,7 @@ function leastCommonAncestor(a, b) {
   return c;
 }
 
-},{}],231:[function(require,module,exports){
+},{}],232:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -12394,7 +12601,7 @@ function _default(compare) {
   });
 }
 
-},{}],232:[function(require,module,exports){
+},{}],233:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -12411,7 +12618,7 @@ function _default(value) {
   });
 }
 
-},{}],233:[function(require,module,exports){
+},{}],234:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -12532,9 +12739,9 @@ function _getRequireWildcardCache(nodeInterop) { if (typeof WeakMap !== "functio
 function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(nodeInterop); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (key !== "default" && Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./cluster.js":217,"./hierarchy/index.js":226,"./pack/enclose.js":235,"./pack/index.js":236,"./pack/siblings.js":237,"./partition.js":238,"./stratify.js":239,"./tree.js":240,"./treemap/binary.js":241,"./treemap/dice.js":242,"./treemap/index.js":243,"./treemap/resquarify.js":244,"./treemap/slice.js":246,"./treemap/sliceDice.js":247,"./treemap/squarify.js":248}],234:[function(require,module,exports){
-arguments[4][134][0].apply(exports,arguments)
-},{"dup":134}],235:[function(require,module,exports){
+},{"./cluster.js":218,"./hierarchy/index.js":227,"./pack/enclose.js":236,"./pack/index.js":237,"./pack/siblings.js":238,"./partition.js":239,"./stratify.js":240,"./tree.js":241,"./treemap/binary.js":242,"./treemap/dice.js":243,"./treemap/index.js":244,"./treemap/resquarify.js":245,"./treemap/slice.js":247,"./treemap/sliceDice.js":248,"./treemap/squarify.js":249}],235:[function(require,module,exports){
+arguments[4][135][0].apply(exports,arguments)
+},{"dup":135}],236:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -12672,7 +12879,7 @@ function encloseBasis3(a, b, c) {
   };
 }
 
-},{"../array.js":216,"../lcg.js":234}],236:[function(require,module,exports){
+},{"../array.js":217,"../lcg.js":235}],237:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -12748,7 +12955,7 @@ function translateChild(k) {
   };
 }
 
-},{"../accessors.js":215,"../constant.js":218,"../lcg.js":234,"./siblings.js":237}],237:[function(require,module,exports){
+},{"../accessors.js":216,"../constant.js":219,"../lcg.js":235,"./siblings.js":238}],238:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -12878,7 +13085,7 @@ function _default(circles) {
   return circles;
 }
 
-},{"../array.js":216,"../lcg.js":234,"./enclose.js":235}],238:[function(require,module,exports){
+},{"../array.js":217,"../lcg.js":235,"./enclose.js":236}],239:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -12931,7 +13138,7 @@ function _default() {
   return partition;
 }
 
-},{"./treemap/dice.js":242,"./treemap/round.js":245}],239:[function(require,module,exports){
+},{"./treemap/dice.js":243,"./treemap/round.js":246}],240:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -13073,7 +13280,7 @@ function slash(path, i) {
   return false;
 }
 
-},{"./accessors.js":215,"./hierarchy/index.js":226}],240:[function(require,module,exports){
+},{"./accessors.js":216,"./hierarchy/index.js":227}],241:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -13306,7 +13513,7 @@ function _default() {
   return tree;
 }
 
-},{"./hierarchy/index.js":226}],241:[function(require,module,exports){
+},{"./hierarchy/index.js":227}],242:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -13353,7 +13560,7 @@ function _default(parent, x0, y0, x1, y1) {
   }
 }
 
-},{}],242:[function(require,module,exports){
+},{}],243:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -13372,7 +13579,7 @@ function _default(parent, x0, y0, x1, y1) {
   }
 }
 
-},{}],243:[function(require,module,exports){
+},{}],244:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -13462,7 +13669,7 @@ function _default() {
   return treemap;
 }
 
-},{"../accessors.js":215,"../constant.js":218,"./round.js":245,"./squarify.js":248}],244:[function(require,module,exports){
+},{"../accessors.js":216,"../constant.js":219,"./round.js":246,"./squarify.js":249}],245:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -13502,7 +13709,7 @@ var _default = function custom(ratio) {
 }(_squarify.phi);
 exports.default = _default;
 
-},{"./dice.js":242,"./slice.js":246,"./squarify.js":248}],245:[function(require,module,exports){
+},{"./dice.js":243,"./slice.js":247,"./squarify.js":249}],246:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -13516,7 +13723,7 @@ function _default(node) {
   node.y1 = Math.round(node.y1);
 }
 
-},{}],246:[function(require,module,exports){
+},{}],247:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -13535,7 +13742,7 @@ function _default(parent, x0, y0, x1, y1) {
   }
 }
 
-},{}],247:[function(require,module,exports){
+},{}],248:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -13549,7 +13756,7 @@ function _default(parent, x0, y0, x1, y1) {
   (parent.depth & 1 ? _slice.default : _dice.default)(parent, x0, y0, x1, y1);
 }
 
-},{"./dice.js":242,"./slice.js":246}],248:[function(require,module,exports){
+},{"./dice.js":243,"./slice.js":247}],249:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -13626,7 +13833,7 @@ var _default = function custom(ratio) {
 }(phi);
 exports.default = _default;
 
-},{"./dice.js":242,"./slice.js":246}],249:[function(require,module,exports){
+},{"./dice.js":243,"./slice.js":247}],250:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -13656,7 +13863,7 @@ function genericArray(a, b) {
   };
 }
 
-},{"./numberArray.js":263,"./value.js":273}],250:[function(require,module,exports){
+},{"./numberArray.js":264,"./value.js":274}],251:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -13681,7 +13888,7 @@ function _default(values) {
   };
 }
 
-},{}],251:[function(require,module,exports){
+},{}],252:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -13701,7 +13908,7 @@ function _default(values) {
   };
 }
 
-},{"./basis.js":250}],252:[function(require,module,exports){
+},{"./basis.js":251}],253:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -13736,9 +13943,9 @@ function nogamma(a, b) {
   return d ? linear(a, d) : (0, _constant.default)(isNaN(a) ? b : a);
 }
 
-},{"./constant.js":253}],253:[function(require,module,exports){
-arguments[4][66][0].apply(exports,arguments)
-},{"dup":66}],254:[function(require,module,exports){
+},{"./constant.js":254}],254:[function(require,module,exports){
+arguments[4][67][0].apply(exports,arguments)
+},{"dup":67}],255:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -13774,7 +13981,7 @@ exports.default = _default;
 var cubehelixLong = cubehelix(_color.default);
 exports.cubehelixLong = cubehelixLong;
 
-},{"./color.js":252,"d3-color":79}],255:[function(require,module,exports){
+},{"./color.js":253,"d3-color":80}],256:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -13788,7 +13995,7 @@ function _default(a, b) {
   };
 }
 
-},{}],256:[function(require,module,exports){
+},{}],257:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -13802,7 +14009,7 @@ function _default(range) {
   };
 }
 
-},{}],257:[function(require,module,exports){
+},{}],258:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -13833,7 +14040,7 @@ exports.default = _default;
 var hclLong = hcl(_color.default);
 exports.hclLong = hclLong;
 
-},{"./color.js":252,"d3-color":79}],258:[function(require,module,exports){
+},{"./color.js":253,"d3-color":80}],259:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -13864,7 +14071,7 @@ exports.default = _default;
 var hslLong = hsl(_color.default);
 exports.hslLong = hslLong;
 
-},{"./color.js":252,"d3-color":79}],259:[function(require,module,exports){
+},{"./color.js":253,"d3-color":80}],260:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -13880,7 +14087,7 @@ function _default(a, b) {
   };
 }
 
-},{"./color.js":252}],260:[function(require,module,exports){
+},{"./color.js":253}],261:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14073,7 +14280,7 @@ function _getRequireWildcardCache(nodeInterop) { if (typeof WeakMap !== "functio
 function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(nodeInterop); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (key !== "default" && Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./array.js":249,"./basis.js":250,"./basisClosed.js":251,"./cubehelix.js":254,"./date.js":255,"./discrete.js":256,"./hcl.js":257,"./hsl.js":258,"./hue.js":259,"./lab.js":261,"./number.js":262,"./numberArray.js":263,"./object.js":264,"./piecewise.js":265,"./quantize.js":266,"./rgb.js":267,"./round.js":268,"./string.js":269,"./transform/index.js":271,"./value.js":273,"./zoom.js":274}],261:[function(require,module,exports){
+},{"./array.js":250,"./basis.js":251,"./basisClosed.js":252,"./cubehelix.js":255,"./date.js":256,"./discrete.js":257,"./hcl.js":258,"./hsl.js":259,"./hue.js":260,"./lab.js":262,"./number.js":263,"./numberArray.js":264,"./object.js":265,"./piecewise.js":266,"./quantize.js":267,"./rgb.js":268,"./round.js":269,"./string.js":270,"./transform/index.js":272,"./value.js":274,"./zoom.js":275}],262:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14097,7 +14304,7 @@ function lab(start, end) {
   };
 }
 
-},{"./color.js":252,"d3-color":79}],262:[function(require,module,exports){
+},{"./color.js":253,"d3-color":80}],263:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14110,7 +14317,7 @@ function _default(a, b) {
   };
 }
 
-},{}],263:[function(require,module,exports){
+},{}],264:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14132,7 +14339,7 @@ function isNumberArray(x) {
   return ArrayBuffer.isView(x) && !(x instanceof DataView);
 }
 
-},{}],264:[function(require,module,exports){
+},{}],265:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14160,7 +14367,7 @@ function _default(a, b) {
   };
 }
 
-},{"./value.js":273}],265:[function(require,module,exports){
+},{"./value.js":274}],266:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14182,7 +14389,7 @@ function piecewise(interpolate, values) {
   };
 }
 
-},{"./value.js":273}],266:[function(require,module,exports){
+},{"./value.js":274}],267:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14195,7 +14402,7 @@ function _default(interpolator, n) {
   return samples;
 }
 
-},{}],267:[function(require,module,exports){
+},{}],268:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14259,7 +14466,7 @@ exports.rgbBasis = rgbBasis;
 var rgbBasisClosed = rgbSpline(_basisClosed.default);
 exports.rgbBasisClosed = rgbBasisClosed;
 
-},{"./basis.js":250,"./basisClosed.js":251,"./color.js":252,"d3-color":79}],268:[function(require,module,exports){
+},{"./basis.js":251,"./basisClosed.js":252,"./color.js":253,"d3-color":80}],269:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14272,7 +14479,7 @@ function _default(a, b) {
   };
 }
 
-},{}],269:[function(require,module,exports){
+},{}],270:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14349,7 +14556,7 @@ function _default(a, b) {
   });
 }
 
-},{"./number.js":262}],270:[function(require,module,exports){
+},{"./number.js":263}],271:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14383,7 +14590,7 @@ function _default(a, b, c, d, e, f) {
   };
 }
 
-},{}],271:[function(require,module,exports){
+},{}],272:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14470,7 +14677,7 @@ exports.interpolateTransformCss = interpolateTransformCss;
 var interpolateTransformSvg = interpolateTransform(_parse.parseSvg, ", ", ")", ")");
 exports.interpolateTransformSvg = interpolateTransformSvg;
 
-},{"../number.js":262,"./parse.js":272}],272:[function(require,module,exports){
+},{"../number.js":263,"./parse.js":273}],273:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14497,7 +14704,7 @@ function parseSvg(value) {
   return (0, _decompose.default)(value.a, value.b, value.c, value.d, value.e, value.f);
 }
 
-},{"./decompose.js":270}],273:[function(require,module,exports){
+},{"./decompose.js":271}],274:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14522,7 +14729,7 @@ function _default(a, b) {
   return b == null || t === "boolean" ? (0, _constant.default)(b) : (t === "number" ? _number.default : t === "string" ? (c = (0, _d3Color.color)(b)) ? (b = c, _rgb.default) : _string.default : b instanceof _d3Color.color ? _rgb.default : b instanceof Date ? _date.default : (0, _numberArray.isNumberArray)(b) ? _numberArray.default : Array.isArray(b) ? _array.genericArray : typeof b.valueOf !== "function" && typeof b.toString !== "function" || isNaN(b) ? _object.default : _number.default)(a, b);
 }
 
-},{"./array.js":249,"./constant.js":253,"./date.js":255,"./number.js":262,"./numberArray.js":263,"./object.js":264,"./rgb.js":267,"./string.js":269,"d3-color":79}],274:[function(require,module,exports){
+},{"./array.js":250,"./constant.js":254,"./date.js":256,"./number.js":263,"./numberArray.js":264,"./object.js":265,"./rgb.js":268,"./string.js":270,"d3-color":80}],275:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14591,7 +14798,7 @@ var _default = function zoomRho(rho, rho2, rho4) {
 }(Math.SQRT2, 2, 4);
 exports.default = _default;
 
-},{}],275:[function(require,module,exports){
+},{}],276:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14606,7 +14813,7 @@ Object.defineProperty(exports, "path", {
 var _path = _interopRequireDefault(require("./path.js"));
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./path.js":276}],276:[function(require,module,exports){
+},{"./path.js":277}],277:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14741,7 +14948,7 @@ Path.prototype = path.prototype = {
 var _default = path;
 exports.default = _default;
 
-},{}],277:[function(require,module,exports){
+},{}],278:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14762,7 +14969,7 @@ function _default(polygon) {
   return area / 2;
 }
 
-},{}],278:[function(require,module,exports){
+},{}],279:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14788,7 +14995,7 @@ function _default(polygon) {
   return k *= 3, [x / k, y / k];
 }
 
-},{}],279:[function(require,module,exports){
+},{}],280:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14813,7 +15020,7 @@ function _default(polygon, point) {
   return inside;
 }
 
-},{}],280:[function(require,module,exports){
+},{}],281:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14828,7 +15035,7 @@ function _default(a, b, c) {
   return (b[0] - a[0]) * (c[1] - a[1]) - (b[1] - a[1]) * (c[0] - a[0]);
 }
 
-},{}],281:[function(require,module,exports){
+},{}],282:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14880,7 +15087,7 @@ function _default(points) {
   return hull;
 }
 
-},{"./cross.js":280}],282:[function(require,module,exports){
+},{"./cross.js":281}],283:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14923,7 +15130,7 @@ var _contains = _interopRequireDefault(require("./contains.js"));
 var _length = _interopRequireDefault(require("./length.js"));
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./area.js":277,"./centroid.js":278,"./contains.js":279,"./hull.js":281,"./length.js":283}],283:[function(require,module,exports){
+},{"./area.js":278,"./centroid.js":279,"./contains.js":280,"./hull.js":282,"./length.js":284}],284:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -14952,7 +15159,7 @@ function _default(polygon) {
   return perimeter;
 }
 
-},{}],284:[function(require,module,exports){
+},{}],285:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15046,7 +15253,7 @@ function addAll(data) {
   return this;
 }
 
-},{}],285:[function(require,module,exports){
+},{}],286:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15102,7 +15309,7 @@ function _default(x, y) {
   return this;
 }
 
-},{}],286:[function(require,module,exports){
+},{}],287:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15117,7 +15324,7 @@ function _default() {
   return data;
 }
 
-},{}],287:[function(require,module,exports){
+},{}],288:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15128,7 +15335,7 @@ function _default(_) {
   return arguments.length ? this.cover(+_[0][0], +_[0][1]).cover(+_[1][0], +_[1][1]) : isNaN(this._x0) ? undefined : [[this._x0, this._y0], [this._x1, this._y1]];
 }
 
-},{}],288:[function(require,module,exports){
+},{}],289:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15191,7 +15398,7 @@ function _default(x, y, radius) {
   return data;
 }
 
-},{"./quad.js":290}],289:[function(require,module,exports){
+},{"./quad.js":291}],290:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15206,7 +15413,7 @@ Object.defineProperty(exports, "quadtree", {
 var _quadtree = _interopRequireDefault(require("./quadtree.js"));
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./quadtree.js":291}],290:[function(require,module,exports){
+},{"./quadtree.js":292}],291:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15221,7 +15428,7 @@ function _default(node, x0, y0, x1, y1) {
   this.y1 = y1;
 }
 
-},{}],291:[function(require,module,exports){
+},{}],292:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15305,7 +15512,7 @@ treeProto.visitAfter = _visitAfter.default;
 treeProto.x = _x.default;
 treeProto.y = _y.default;
 
-},{"./add.js":284,"./cover.js":285,"./data.js":286,"./extent.js":287,"./find.js":288,"./remove.js":292,"./root.js":293,"./size.js":294,"./visit.js":295,"./visitAfter.js":296,"./x.js":297,"./y.js":298}],292:[function(require,module,exports){
+},{"./add.js":285,"./cover.js":286,"./data.js":287,"./extent.js":288,"./find.js":289,"./remove.js":293,"./root.js":294,"./size.js":295,"./visit.js":296,"./visitAfter.js":297,"./x.js":298,"./y.js":299}],293:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15371,7 +15578,7 @@ function removeAll(data) {
   return this;
 }
 
-},{}],293:[function(require,module,exports){
+},{}],294:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15382,7 +15589,7 @@ function _default() {
   return this._root;
 }
 
-},{}],294:[function(require,module,exports){
+},{}],295:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15397,7 +15604,7 @@ function _default() {
   return size;
 }
 
-},{}],295:[function(require,module,exports){
+},{}],296:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15429,7 +15636,7 @@ function _default(callback) {
   return this;
 }
 
-},{"./quad.js":290}],296:[function(require,module,exports){
+},{"./quad.js":291}],297:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15466,7 +15673,7 @@ function _default(callback) {
   return this;
 }
 
-},{"./quad.js":290}],297:[function(require,module,exports){
+},{"./quad.js":291}],298:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15481,7 +15688,7 @@ function _default(_) {
   return arguments.length ? (this._x = _, this) : this._x;
 }
 
-},{}],298:[function(require,module,exports){
+},{}],299:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15496,7 +15703,7 @@ function _default(_) {
   return arguments.length ? (this._y = _, this) : this._y;
 }
 
-},{}],299:[function(require,module,exports){
+},{}],300:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15521,7 +15728,7 @@ var _default = function sourceRandomBates(source) {
 }(_defaultSource.default);
 exports.default = _default;
 
-},{"./defaultSource.js":304,"./irwinHall.js":310}],300:[function(require,module,exports){
+},{"./defaultSource.js":305,"./irwinHall.js":311}],301:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15542,7 +15749,7 @@ var _default = function sourceRandomBernoulli(source) {
 }(_defaultSource.default);
 exports.default = _default;
 
-},{"./defaultSource.js":304}],301:[function(require,module,exports){
+},{"./defaultSource.js":305}],302:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15567,7 +15774,7 @@ var _default = function sourceRandomBeta(source) {
 }(_defaultSource.default);
 exports.default = _default;
 
-},{"./defaultSource.js":304,"./gamma.js":306}],302:[function(require,module,exports){
+},{"./defaultSource.js":305,"./gamma.js":307}],303:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15613,7 +15820,7 @@ var _default = function sourceRandomBinomial(source) {
 }(_defaultSource.default);
 exports.default = _default;
 
-},{"./beta.js":301,"./defaultSource.js":304,"./geometric.js":307}],303:[function(require,module,exports){
+},{"./beta.js":302,"./defaultSource.js":305,"./geometric.js":308}],304:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15635,7 +15842,7 @@ var _default = function sourceRandomCauchy(source) {
 }(_defaultSource.default);
 exports.default = _default;
 
-},{"./defaultSource.js":304}],304:[function(require,module,exports){
+},{"./defaultSource.js":305}],305:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15645,7 +15852,7 @@ exports.default = void 0;
 var _default = Math.random;
 exports.default = _default;
 
-},{}],305:[function(require,module,exports){
+},{}],306:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15665,7 +15872,7 @@ var _default = function sourceRandomExponential(source) {
 }(_defaultSource.default);
 exports.default = _default;
 
-},{"./defaultSource.js":304}],306:[function(require,module,exports){
+},{"./defaultSource.js":305}],307:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15704,7 +15911,7 @@ var _default = function sourceRandomGamma(source) {
 }(_defaultSource.default);
 exports.default = _default;
 
-},{"./defaultSource.js":304,"./normal.js":314}],307:[function(require,module,exports){
+},{"./defaultSource.js":305,"./normal.js":315}],308:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15728,7 +15935,7 @@ var _default = function sourceRandomGeometric(source) {
 }(_defaultSource.default);
 exports.default = _default;
 
-},{"./defaultSource.js":304}],308:[function(require,module,exports){
+},{"./defaultSource.js":305}],309:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15862,7 +16069,7 @@ var _poisson = _interopRequireDefault(require("./poisson.js"));
 var _lcg = _interopRequireDefault(require("./lcg.js"));
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./bates.js":299,"./bernoulli.js":300,"./beta.js":301,"./binomial.js":302,"./cauchy.js":303,"./exponential.js":305,"./gamma.js":306,"./geometric.js":307,"./int.js":309,"./irwinHall.js":310,"./lcg.js":311,"./logNormal.js":312,"./logistic.js":313,"./normal.js":314,"./pareto.js":315,"./poisson.js":316,"./uniform.js":317,"./weibull.js":318}],309:[function(require,module,exports){
+},{"./bates.js":300,"./bernoulli.js":301,"./beta.js":302,"./binomial.js":303,"./cauchy.js":304,"./exponential.js":306,"./gamma.js":307,"./geometric.js":308,"./int.js":310,"./irwinHall.js":311,"./lcg.js":312,"./logNormal.js":313,"./logistic.js":314,"./normal.js":315,"./pareto.js":316,"./poisson.js":317,"./uniform.js":318,"./weibull.js":319}],310:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15885,7 +16092,7 @@ var _default = function sourceRandomInt(source) {
 }(_defaultSource.default);
 exports.default = _default;
 
-},{"./defaultSource.js":304}],310:[function(require,module,exports){
+},{"./defaultSource.js":305}],311:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15907,7 +16114,7 @@ var _default = function sourceRandomIrwinHall(source) {
 }(_defaultSource.default);
 exports.default = _default;
 
-},{"./defaultSource.js":304}],311:[function(require,module,exports){
+},{"./defaultSource.js":305}],312:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15923,7 +16130,7 @@ function lcg(seed = Math.random()) {
   return () => (state = mul * state + inc | 0, eps * (state >>> 0));
 }
 
-},{}],312:[function(require,module,exports){
+},{}],313:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15946,7 +16153,7 @@ var _default = function sourceRandomLogNormal(source) {
 }(_defaultSource.default);
 exports.default = _default;
 
-},{"./defaultSource.js":304,"./normal.js":314}],313:[function(require,module,exports){
+},{"./defaultSource.js":305,"./normal.js":315}],314:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -15969,7 +16176,7 @@ var _default = function sourceRandomLogistic(source) {
 }(_defaultSource.default);
 exports.default = _default;
 
-},{"./defaultSource.js":304}],314:[function(require,module,exports){
+},{"./defaultSource.js":305}],315:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16003,7 +16210,7 @@ var _default = function sourceRandomNormal(source) {
 }(_defaultSource.default);
 exports.default = _default;
 
-},{"./defaultSource.js":304}],315:[function(require,module,exports){
+},{"./defaultSource.js":305}],316:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16025,7 +16232,7 @@ var _default = function sourceRandomPareto(source) {
 }(_defaultSource.default);
 exports.default = _default;
 
-},{"./defaultSource.js":304}],316:[function(require,module,exports){
+},{"./defaultSource.js":305}],317:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16059,7 +16266,7 @@ var _default = function sourceRandomPoisson(source) {
 }(_defaultSource.default);
 exports.default = _default;
 
-},{"./binomial.js":302,"./defaultSource.js":304,"./gamma.js":306}],317:[function(require,module,exports){
+},{"./binomial.js":303,"./defaultSource.js":305,"./gamma.js":307}],318:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16082,7 +16289,7 @@ var _default = function sourceRandomUniform(source) {
 }(_defaultSource.default);
 exports.default = _default;
 
-},{"./defaultSource.js":304}],318:[function(require,module,exports){
+},{"./defaultSource.js":305}],319:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16111,7 +16318,7 @@ var _default = function sourceRandomWeibull(source) {
 }(_defaultSource.default);
 exports.default = _default;
 
-},{"./defaultSource.js":304}],319:[function(require,module,exports){
+},{"./defaultSource.js":305}],320:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16123,7 +16330,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 var _default = (0, _colors.default)("7fc97fbeaed4fdc086ffff99386cb0f0027fbf5b17666666");
 exports.default = _default;
 
-},{"../colors.js":329}],320:[function(require,module,exports){
+},{"../colors.js":330}],321:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16135,7 +16342,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 var _default = (0, _colors.default)("1b9e77d95f027570b3e7298a66a61ee6ab02a6761d666666");
 exports.default = _default;
 
-},{"../colors.js":329}],321:[function(require,module,exports){
+},{"../colors.js":330}],322:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16147,7 +16354,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 var _default = (0, _colors.default)("a6cee31f78b4b2df8a33a02cfb9a99e31a1cfdbf6fff7f00cab2d66a3d9affff99b15928");
 exports.default = _default;
 
-},{"../colors.js":329}],322:[function(require,module,exports){
+},{"../colors.js":330}],323:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16159,7 +16366,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 var _default = (0, _colors.default)("fbb4aeb3cde3ccebc5decbe4fed9a6ffffcce5d8bdfddaecf2f2f2");
 exports.default = _default;
 
-},{"../colors.js":329}],323:[function(require,module,exports){
+},{"../colors.js":330}],324:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16171,7 +16378,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 var _default = (0, _colors.default)("b3e2cdfdcdaccbd5e8f4cae4e6f5c9fff2aef1e2cccccccc");
 exports.default = _default;
 
-},{"../colors.js":329}],324:[function(require,module,exports){
+},{"../colors.js":330}],325:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16183,7 +16390,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 var _default = (0, _colors.default)("e41a1c377eb84daf4a984ea3ff7f00ffff33a65628f781bf999999");
 exports.default = _default;
 
-},{"../colors.js":329}],325:[function(require,module,exports){
+},{"../colors.js":330}],326:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16195,7 +16402,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 var _default = (0, _colors.default)("66c2a5fc8d628da0cbe78ac3a6d854ffd92fe5c494b3b3b3");
 exports.default = _default;
 
-},{"../colors.js":329}],326:[function(require,module,exports){
+},{"../colors.js":330}],327:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16207,7 +16414,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 var _default = (0, _colors.default)("8dd3c7ffffb3bebadafb807280b1d3fdb462b3de69fccde5d9d9d9bc80bdccebc5ffed6f");
 exports.default = _default;
 
-},{"../colors.js":329}],327:[function(require,module,exports){
+},{"../colors.js":330}],328:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16219,7 +16426,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 var _default = (0, _colors.default)("4e79a7f28e2ce1575976b7b259a14fedc949af7aa1ff9da79c755fbab0ab");
 exports.default = _default;
 
-},{"../colors.js":329}],328:[function(require,module,exports){
+},{"../colors.js":330}],329:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16231,7 +16438,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 var _default = (0, _colors.default)("1f77b4ff7f0e2ca02cd627289467bd8c564be377c27f7f7fbcbd2217becf");
 exports.default = _default;
 
-},{"../colors.js":329}],329:[function(require,module,exports){
+},{"../colors.js":330}],330:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16246,7 +16453,7 @@ function _default(specifier) {
   return colors;
 }
 
-},{}],330:[function(require,module,exports){
+},{}],331:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16261,7 +16468,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],331:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],332:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16276,7 +16483,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],332:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],333:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16291,7 +16498,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],333:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],334:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16306,7 +16513,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],334:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],335:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16321,7 +16528,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],335:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],336:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16336,7 +16543,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],336:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],337:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16351,7 +16558,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],337:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],338:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16366,7 +16573,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],338:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],339:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16381,7 +16588,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],339:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],340:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16884,7 +17091,7 @@ function _getRequireWildcardCache(nodeInterop) { if (typeof WeakMap !== "functio
 function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(nodeInterop); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (key !== "default" && Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./categorical/Accent.js":319,"./categorical/Dark2.js":320,"./categorical/Paired.js":321,"./categorical/Pastel1.js":322,"./categorical/Pastel2.js":323,"./categorical/Set1.js":324,"./categorical/Set2.js":325,"./categorical/Set3.js":326,"./categorical/Tableau10.js":327,"./categorical/category10.js":328,"./diverging/BrBG.js":330,"./diverging/PRGn.js":331,"./diverging/PiYG.js":332,"./diverging/PuOr.js":333,"./diverging/RdBu.js":334,"./diverging/RdGy.js":335,"./diverging/RdYlBu.js":336,"./diverging/RdYlGn.js":337,"./diverging/Spectral.js":338,"./sequential-multi/BuGn.js":341,"./sequential-multi/BuPu.js":342,"./sequential-multi/GnBu.js":343,"./sequential-multi/OrRd.js":344,"./sequential-multi/PuBu.js":345,"./sequential-multi/PuBuGn.js":346,"./sequential-multi/PuRd.js":347,"./sequential-multi/RdPu.js":348,"./sequential-multi/YlGn.js":349,"./sequential-multi/YlGnBu.js":350,"./sequential-multi/YlOrBr.js":351,"./sequential-multi/YlOrRd.js":352,"./sequential-multi/cividis.js":353,"./sequential-multi/cubehelix.js":354,"./sequential-multi/rainbow.js":355,"./sequential-multi/sinebow.js":356,"./sequential-multi/turbo.js":357,"./sequential-multi/viridis.js":358,"./sequential-single/Blues.js":359,"./sequential-single/Greens.js":360,"./sequential-single/Greys.js":361,"./sequential-single/Oranges.js":362,"./sequential-single/Purples.js":363,"./sequential-single/Reds.js":364}],340:[function(require,module,exports){
+},{"./categorical/Accent.js":320,"./categorical/Dark2.js":321,"./categorical/Paired.js":322,"./categorical/Pastel1.js":323,"./categorical/Pastel2.js":324,"./categorical/Set1.js":325,"./categorical/Set2.js":326,"./categorical/Set3.js":327,"./categorical/Tableau10.js":328,"./categorical/category10.js":329,"./diverging/BrBG.js":331,"./diverging/PRGn.js":332,"./diverging/PiYG.js":333,"./diverging/PuOr.js":334,"./diverging/RdBu.js":335,"./diverging/RdGy.js":336,"./diverging/RdYlBu.js":337,"./diverging/RdYlGn.js":338,"./diverging/Spectral.js":339,"./sequential-multi/BuGn.js":342,"./sequential-multi/BuPu.js":343,"./sequential-multi/GnBu.js":344,"./sequential-multi/OrRd.js":345,"./sequential-multi/PuBu.js":346,"./sequential-multi/PuBuGn.js":347,"./sequential-multi/PuRd.js":348,"./sequential-multi/RdPu.js":349,"./sequential-multi/YlGn.js":350,"./sequential-multi/YlGnBu.js":351,"./sequential-multi/YlOrBr.js":352,"./sequential-multi/YlOrRd.js":353,"./sequential-multi/cividis.js":354,"./sequential-multi/cubehelix.js":355,"./sequential-multi/rainbow.js":356,"./sequential-multi/sinebow.js":357,"./sequential-multi/turbo.js":358,"./sequential-multi/viridis.js":359,"./sequential-single/Blues.js":360,"./sequential-single/Greens.js":361,"./sequential-single/Greys.js":362,"./sequential-single/Oranges.js":363,"./sequential-single/Purples.js":364,"./sequential-single/Reds.js":365}],341:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16895,7 +17102,7 @@ var _d3Interpolate = require("d3-interpolate");
 var _default = scheme => (0, _d3Interpolate.interpolateRgbBasis)(scheme[scheme.length - 1]);
 exports.default = _default;
 
-},{"d3-interpolate":260}],341:[function(require,module,exports){
+},{"d3-interpolate":261}],342:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16910,7 +17117,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],342:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],343:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16925,7 +17132,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],343:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],344:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16940,7 +17147,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],344:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],345:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16955,7 +17162,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],345:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],346:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16970,7 +17177,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],346:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],347:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -16985,7 +17192,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],347:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],348:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17000,7 +17207,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],348:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],349:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17015,7 +17222,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],349:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],350:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17030,7 +17237,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],350:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],351:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17045,7 +17252,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],351:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],352:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17060,7 +17267,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],352:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],353:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17075,7 +17282,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],353:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],354:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17087,7 +17294,7 @@ function _default(t) {
   return "rgb(" + Math.max(0, Math.min(255, Math.round(-4.54 - t * (35.34 - t * (2381.73 - t * (6402.7 - t * (7024.72 - t * 2710.57))))))) + ", " + Math.max(0, Math.min(255, Math.round(32.49 + t * (170.73 + t * (52.82 - t * (131.46 - t * (176.58 - t * 67.37))))))) + ", " + Math.max(0, Math.min(255, Math.round(81.24 + t * (442.36 - t * (2482.43 - t * (6167.24 - t * (6614.94 - t * 2475.67))))))) + ")";
 }
 
-},{}],354:[function(require,module,exports){
+},{}],355:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17099,7 +17306,7 @@ var _d3Interpolate = require("d3-interpolate");
 var _default = (0, _d3Interpolate.interpolateCubehelixLong)((0, _d3Color.cubehelix)(300, 0.5, 0.0), (0, _d3Color.cubehelix)(-240, 0.5, 1.0));
 exports.default = _default;
 
-},{"d3-color":79,"d3-interpolate":260}],355:[function(require,module,exports){
+},{"d3-color":80,"d3-interpolate":261}],356:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17124,7 +17331,7 @@ function _default(t) {
   return c + "";
 }
 
-},{"d3-color":79,"d3-interpolate":260}],356:[function(require,module,exports){
+},{"d3-color":80,"d3-interpolate":261}],357:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17144,7 +17351,7 @@ function _default(t) {
   return c + "";
 }
 
-},{"d3-color":79}],357:[function(require,module,exports){
+},{"d3-color":80}],358:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17156,7 +17363,7 @@ function _default(t) {
   return "rgb(" + Math.max(0, Math.min(255, Math.round(34.61 + t * (1172.33 - t * (10793.56 - t * (33300.12 - t * (38394.49 - t * 14825.05))))))) + ", " + Math.max(0, Math.min(255, Math.round(23.31 + t * (557.33 + t * (1225.33 - t * (3574.96 - t * (1073.77 + t * 707.56))))))) + ", " + Math.max(0, Math.min(255, Math.round(27.2 + t * (3211.1 - t * (15327.97 - t * (27814 - t * (22569.18 - t * 6838.66))))))) + ")";
 }
 
-},{}],358:[function(require,module,exports){
+},{}],359:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17180,7 +17387,7 @@ exports.inferno = inferno;
 var plasma = ramp((0, _colors.default)("0d088710078813078916078a19068c1b068d1d068e20068f2206902406912605912805922a05932c05942e05952f059631059733059735049837049938049a3a049a3c049b3e049c3f049c41049d43039e44039e46039f48039f4903a04b03a14c02a14e02a25002a25102a35302a35502a45601a45801a45901a55b01a55c01a65e01a66001a66100a76300a76400a76600a76700a86900a86a00a86c00a86e00a86f00a87100a87201a87401a87501a87701a87801a87a02a87b02a87d03a87e03a88004a88104a78305a78405a78606a68707a68808a68a09a58b0aa58d0ba58e0ca48f0da4910ea3920fa39410a29511a19613a19814a099159f9a169f9c179e9d189d9e199da01a9ca11b9ba21d9aa31e9aa51f99a62098a72197a82296aa2395ab2494ac2694ad2793ae2892b02991b12a90b22b8fb32c8eb42e8db52f8cb6308bb7318ab83289ba3388bb3488bc3587bd3786be3885bf3984c03a83c13b82c23c81c33d80c43e7fc5407ec6417dc7427cc8437bc9447aca457acb4679cc4778cc4977cd4a76ce4b75cf4c74d04d73d14e72d24f71d35171d45270d5536fd5546ed6556dd7566cd8576bd9586ada5a6ada5b69db5c68dc5d67dd5e66de5f65de6164df6263e06363e16462e26561e26660e3685fe4695ee56a5de56b5de66c5ce76e5be76f5ae87059e97158e97257ea7457eb7556eb7655ec7754ed7953ed7a52ee7b51ef7c51ef7e50f07f4ff0804ef1814df1834cf2844bf3854bf3874af48849f48948f58b47f58c46f68d45f68f44f79044f79143f79342f89441f89540f9973ff9983ef99a3efa9b3dfa9c3cfa9e3bfb9f3afba139fba238fca338fca537fca636fca835fca934fdab33fdac33fdae32fdaf31fdb130fdb22ffdb42ffdb52efeb72dfeb82cfeba2cfebb2bfebd2afebe2afec029fdc229fdc328fdc527fdc627fdc827fdca26fdcb26fccd25fcce25fcd025fcd225fbd324fbd524fbd724fad824fada24f9dc24f9dd25f8df25f8e125f7e225f7e425f6e626f6e826f5e926f5eb27f4ed27f3ee27f3f027f2f227f1f426f1f525f0f724f0f921"));
 exports.plasma = plasma;
 
-},{"../colors.js":329}],359:[function(require,module,exports){
+},{"../colors.js":330}],360:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17195,7 +17402,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],360:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],361:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17210,7 +17417,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],361:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],362:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17225,7 +17432,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],362:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],363:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17240,7 +17447,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],363:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],364:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17255,7 +17462,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],364:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],365:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17270,7 +17477,7 @@ exports.scheme = scheme;
 var _default = (0, _ramp.default)(scheme);
 exports.default = _default;
 
-},{"../colors.js":329,"../ramp.js":340}],365:[function(require,module,exports){
+},{"../colors.js":330,"../ramp.js":341}],366:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17359,7 +17566,7 @@ function point() {
   return pointish(band.apply(null, arguments).paddingInner(1));
 }
 
-},{"./init.js":371,"./ordinal.js":376,"d3-array":24}],366:[function(require,module,exports){
+},{"./init.js":372,"./ordinal.js":377,"d3-array":25}],367:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17372,7 +17579,7 @@ function constants(x) {
   };
 }
 
-},{}],367:[function(require,module,exports){
+},{}],368:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17490,7 +17697,7 @@ function continuous() {
   return transformer()(identity, identity);
 }
 
-},{"./constant.js":366,"./number.js":375,"d3-array":24,"d3-interpolate":260}],368:[function(require,module,exports){
+},{"./constant.js":367,"./number.js":376,"d3-array":25,"d3-interpolate":261}],369:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17583,7 +17790,7 @@ function divergingSqrt() {
   return divergingPow.apply(null, arguments).exponent(0.5);
 }
 
-},{"./continuous.js":367,"./init.js":371,"./linear.js":372,"./log.js":373,"./pow.js":377,"./sequential.js":381,"./symlog.js":383,"d3-interpolate":260}],369:[function(require,module,exports){
+},{"./continuous.js":368,"./init.js":372,"./linear.js":373,"./log.js":374,"./pow.js":378,"./sequential.js":382,"./symlog.js":384,"d3-interpolate":261}],370:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17612,7 +17819,7 @@ function identity(domain) {
   return (0, _linear.linearish)(scale);
 }
 
-},{"./linear.js":372,"./number.js":375}],370:[function(require,module,exports){
+},{"./linear.js":373,"./number.js":376}],371:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17807,7 +18014,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 function _getRequireWildcardCache(nodeInterop) { if (typeof WeakMap !== "function") return null; var cacheBabelInterop = new WeakMap(); var cacheNodeInterop = new WeakMap(); return (_getRequireWildcardCache = function (nodeInterop) { return nodeInterop ? cacheNodeInterop : cacheBabelInterop; })(nodeInterop); }
 function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(nodeInterop); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (key !== "default" && Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
 
-},{"./band.js":365,"./diverging.js":368,"./identity.js":369,"./linear.js":372,"./log.js":373,"./ordinal.js":376,"./pow.js":377,"./quantile.js":378,"./quantize.js":379,"./radial.js":380,"./sequential.js":381,"./sequentialQuantile.js":382,"./symlog.js":383,"./threshold.js":384,"./tickFormat.js":385,"./time.js":386,"./utcTime.js":387}],371:[function(require,module,exports){
+},{"./band.js":366,"./diverging.js":369,"./identity.js":370,"./linear.js":373,"./log.js":374,"./ordinal.js":377,"./pow.js":378,"./quantile.js":379,"./quantize.js":380,"./radial.js":381,"./sequential.js":382,"./sequentialQuantile.js":383,"./symlog.js":384,"./threshold.js":385,"./tickFormat.js":386,"./time.js":387,"./utcTime.js":388}],372:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17847,7 +18054,7 @@ function initInterpolator(domain, interpolator) {
   return this;
 }
 
-},{}],372:[function(require,module,exports){
+},{}],373:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -17916,7 +18123,7 @@ function linear() {
   return linearish(scale);
 }
 
-},{"./continuous.js":367,"./init.js":371,"./tickFormat.js":385,"d3-array":24}],373:[function(require,module,exports){
+},{"./continuous.js":368,"./init.js":372,"./tickFormat.js":386,"d3-array":25}],374:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18041,7 +18248,7 @@ function log() {
   return scale;
 }
 
-},{"./continuous.js":367,"./init.js":371,"./nice.js":374,"d3-array":24,"d3-format":152}],374:[function(require,module,exports){
+},{"./continuous.js":368,"./init.js":372,"./nice.js":375,"d3-array":25,"d3-format":153}],375:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18064,7 +18271,7 @@ function nice(domain, interval) {
   return domain;
 }
 
-},{}],375:[function(require,module,exports){
+},{}],376:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18075,7 +18282,7 @@ function number(x) {
   return +x;
 }
 
-},{}],376:[function(require,module,exports){
+},{}],377:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18122,7 +18329,7 @@ function ordinal() {
   return scale;
 }
 
-},{"./init.js":371,"d3-array":24}],377:[function(require,module,exports){
+},{"./init.js":372,"d3-array":25}],378:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18168,7 +18375,7 @@ function sqrt() {
   return pow.apply(null, arguments).exponent(0.5);
 }
 
-},{"./continuous.js":367,"./init.js":371,"./linear.js":372}],378:[function(require,module,exports){
+},{"./continuous.js":368,"./init.js":372,"./linear.js":373}],379:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18218,7 +18425,7 @@ function quantile() {
   return _init.initRange.apply(scale, arguments);
 }
 
-},{"./init.js":371,"d3-array":24}],379:[function(require,module,exports){
+},{"./init.js":372,"d3-array":25}],380:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18266,7 +18473,7 @@ function quantize() {
   return _init.initRange.apply((0, _linear.linearish)(scale), arguments);
 }
 
-},{"./init.js":371,"./linear.js":372,"d3-array":24}],380:[function(require,module,exports){
+},{"./init.js":372,"./linear.js":373,"d3-array":25}],381:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18321,7 +18528,7 @@ function radial() {
   return (0, _linear.linearish)(scale);
 }
 
-},{"./continuous.js":367,"./init.js":371,"./linear.js":372,"./number.js":375}],381:[function(require,module,exports){
+},{"./continuous.js":368,"./init.js":372,"./linear.js":373,"./number.js":376}],382:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18413,7 +18620,7 @@ function sequentialSqrt() {
   return sequentialPow.apply(null, arguments).exponent(0.5);
 }
 
-},{"./continuous.js":367,"./init.js":371,"./linear.js":372,"./log.js":373,"./pow.js":377,"./symlog.js":383,"d3-interpolate":260}],382:[function(require,module,exports){
+},{"./continuous.js":368,"./init.js":372,"./linear.js":373,"./log.js":374,"./pow.js":378,"./symlog.js":384,"d3-interpolate":261}],383:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18453,7 +18660,7 @@ function sequentialQuantile() {
   return _init.initInterpolator.apply(scale, arguments);
 }
 
-},{"./continuous.js":367,"./init.js":371,"d3-array":24}],383:[function(require,module,exports){
+},{"./continuous.js":368,"./init.js":372,"d3-array":25}],384:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18490,7 +18697,7 @@ function symlog() {
   return _init.initRange.apply(scale, arguments);
 }
 
-},{"./continuous.js":367,"./init.js":371,"./linear.js":372}],384:[function(require,module,exports){
+},{"./continuous.js":368,"./init.js":372,"./linear.js":373}],385:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18526,7 +18733,7 @@ function threshold() {
   return _init.initRange.apply(scale, arguments);
 }
 
-},{"./init.js":371,"d3-array":24}],385:[function(require,module,exports){
+},{"./init.js":372,"d3-array":25}],386:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18565,7 +18772,7 @@ function tickFormat(start, stop, count, specifier) {
   return (0, _d3Format.format)(specifier);
 }
 
-},{"d3-array":24,"d3-format":152}],386:[function(require,module,exports){
+},{"d3-array":25,"d3-format":153}],387:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18629,7 +18836,7 @@ function time() {
   return _init.initRange.apply(calendar(_d3Time.timeTicks, _d3Time.timeTickInterval, _d3Time.timeYear, _d3Time.timeMonth, _d3Time.timeWeek, _d3Time.timeDay, _d3Time.timeHour, _d3Time.timeMinute, _d3Time.timeSecond, _d3TimeFormat.timeFormat).domain([new Date(2000, 0, 1), new Date(2000, 0, 2)]), arguments);
 }
 
-},{"./continuous.js":367,"./init.js":371,"./nice.js":374,"d3-time":508,"d3-time-format":501}],387:[function(require,module,exports){
+},{"./continuous.js":368,"./init.js":372,"./nice.js":375,"d3-time":509,"d3-time-format":502}],388:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18644,7 +18851,7 @@ function utcTime() {
   return _init.initRange.apply((0, _time.calendar)(_d3Time.utcTicks, _d3Time.utcTickInterval, _d3Time.utcYear, _d3Time.utcMonth, _d3Time.utcWeek, _d3Time.utcDay, _d3Time.utcHour, _d3Time.utcMinute, _d3Time.utcSecond, _d3TimeFormat.utcFormat).domain([Date.UTC(2000, 0, 1), Date.UTC(2000, 0, 2)]), arguments);
 }
 
-},{"./init.js":371,"./time.js":386,"d3-time":508,"d3-time-format":501}],388:[function(require,module,exports){
+},{"./init.js":372,"./time.js":387,"d3-time":509,"d3-time-format":502}],389:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18661,9 +18868,9 @@ function array(x) {
   return x == null ? [] : Array.isArray(x) ? x : Array.from(x);
 }
 
-},{}],389:[function(require,module,exports){
-arguments[4][72][0].apply(exports,arguments)
-},{"dup":72}],390:[function(require,module,exports){
+},{}],390:[function(require,module,exports){
+arguments[4][73][0].apply(exports,arguments)
+},{"dup":73}],391:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18677,7 +18884,7 @@ function _default(name) {
   return (0, _select.default)((0, _creator.default)(name).call(document.documentElement));
 }
 
-},{"./creator.js":391,"./select.js":399}],391:[function(require,module,exports){
+},{"./creator.js":392,"./select.js":400}],392:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18704,7 +18911,7 @@ function _default(name) {
   return (fullname.local ? creatorFixed : creatorInherit)(fullname);
 }
 
-},{"./namespace.js":395,"./namespaces.js":396}],392:[function(require,module,exports){
+},{"./namespace.js":396,"./namespaces.js":397}],393:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18817,7 +19024,7 @@ var _style = require("./selection/style.js");
 var _window = _interopRequireDefault(require("./window.js"));
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./create.js":390,"./creator.js":391,"./local.js":393,"./matcher.js":394,"./namespace.js":395,"./namespaces.js":396,"./pointer.js":397,"./pointers.js":398,"./select.js":399,"./selectAll.js":400,"./selection/index.js":415,"./selection/style.js":435,"./selector.js":437,"./selectorAll.js":438,"./window.js":440}],393:[function(require,module,exports){
+},{"./create.js":391,"./creator.js":392,"./local.js":394,"./matcher.js":395,"./namespace.js":396,"./namespaces.js":397,"./pointer.js":398,"./pointers.js":399,"./select.js":400,"./selectAll.js":401,"./selection/index.js":416,"./selection/style.js":436,"./selector.js":438,"./selectorAll.js":439,"./window.js":441}],394:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18849,7 +19056,7 @@ Local.prototype = local.prototype = {
   }
 };
 
-},{}],394:[function(require,module,exports){
+},{}],395:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18868,7 +19075,7 @@ function childMatcher(selector) {
   };
 }
 
-},{}],395:[function(require,module,exports){
+},{}],396:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18887,7 +19094,7 @@ function _default(name) {
   } : name; // eslint-disable-line no-prototype-builtins
 }
 
-},{"./namespaces.js":396}],396:[function(require,module,exports){
+},{"./namespaces.js":397}],397:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18905,7 +19112,7 @@ var _default = {
 };
 exports.default = _default;
 
-},{}],397:[function(require,module,exports){
+},{}],398:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18933,7 +19140,7 @@ function _default(event, node) {
   return [event.pageX, event.pageY];
 }
 
-},{"./sourceEvent.js":439}],398:[function(require,module,exports){
+},{"./sourceEvent.js":440}],399:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18953,7 +19160,7 @@ function _default(events, node) {
   return Array.from(events, event => (0, _pointer.default)(event, node));
 }
 
-},{"./pointer.js":397,"./sourceEvent.js":439}],399:[function(require,module,exports){
+},{"./pointer.js":398,"./sourceEvent.js":440}],400:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18965,7 +19172,7 @@ function _default(selector) {
   return typeof selector === "string" ? new _index.Selection([[document.querySelector(selector)]], [document.documentElement]) : new _index.Selection([[selector]], _index.root);
 }
 
-},{"./selection/index.js":415}],400:[function(require,module,exports){
+},{"./selection/index.js":416}],401:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18979,7 +19186,7 @@ function _default(selector) {
   return typeof selector === "string" ? new _index.Selection([document.querySelectorAll(selector)], [document.documentElement]) : new _index.Selection([(0, _array.default)(selector)], _index.root);
 }
 
-},{"./array.js":388,"./selection/index.js":415}],401:[function(require,module,exports){
+},{"./array.js":389,"./selection/index.js":416}],402:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -18995,7 +19202,7 @@ function _default(name) {
   });
 }
 
-},{"../creator.js":391}],402:[function(require,module,exports){
+},{"../creator.js":392}],403:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19045,7 +19252,7 @@ function _default(name, value) {
   return this.each((value == null ? fullname.local ? attrRemoveNS : attrRemove : typeof value === "function" ? fullname.local ? attrFunctionNS : attrFunction : fullname.local ? attrConstantNS : attrConstant)(fullname, value));
 }
 
-},{"../namespace.js":395}],403:[function(require,module,exports){
+},{"../namespace.js":396}],404:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19059,7 +19266,7 @@ function _default() {
   return this;
 }
 
-},{}],404:[function(require,module,exports){
+},{}],405:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19134,7 +19341,7 @@ function _default(name, value) {
   return this.each((typeof value === "function" ? classedFunction : value ? classedTrue : classedFalse)(names, value));
 }
 
-},{}],405:[function(require,module,exports){
+},{}],406:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19155,7 +19362,7 @@ function _default(deep) {
   return this.select(deep ? selection_cloneDeep : selection_cloneShallow);
 }
 
-},{}],406:[function(require,module,exports){
+},{}],407:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19282,7 +19489,7 @@ function arraylike(data) {
   : Array.from(data); // Map, Set, iterable, string, or anything else
 }
 
-},{"../constant.js":389,"./enter.js":411,"./index.js":415}],407:[function(require,module,exports){
+},{"../constant.js":390,"./enter.js":412,"./index.js":416}],408:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19293,7 +19500,7 @@ function _default(value) {
   return arguments.length ? this.property("__data__", value) : this.node().__data__;
 }
 
-},{}],408:[function(require,module,exports){
+},{}],409:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19327,7 +19534,7 @@ function _default(type, params) {
   return this.each((typeof params === "function" ? dispatchFunction : dispatchConstant)(type, params));
 }
 
-},{"../window.js":440}],409:[function(require,module,exports){
+},{"../window.js":441}],410:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19343,7 +19550,7 @@ function _default(callback) {
   return this;
 }
 
-},{}],410:[function(require,module,exports){
+},{}],411:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19354,7 +19561,7 @@ function _default() {
   return !this.node();
 }
 
-},{}],411:[function(require,module,exports){
+},{}],412:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19391,7 +19598,7 @@ EnterNode.prototype = {
   }
 };
 
-},{"./index.js":415,"./sparse.js":434}],412:[function(require,module,exports){
+},{"./index.js":416,"./sparse.js":435}],413:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19405,7 +19612,7 @@ function _default() {
   return new _index.Selection(this._exit || this._groups.map(_sparse.default), this._parents);
 }
 
-},{"./index.js":415,"./sparse.js":434}],413:[function(require,module,exports){
+},{"./index.js":416,"./sparse.js":435}],414:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19427,7 +19634,7 @@ function _default(match) {
   return new _index.Selection(subgroups, this._parents);
 }
 
-},{"../matcher.js":394,"./index.js":415}],414:[function(require,module,exports){
+},{"../matcher.js":395,"./index.js":416}],415:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19452,7 +19659,7 @@ function _default(value) {
   return arguments.length ? this.each(value == null ? htmlRemove : (typeof value === "function" ? htmlFunction : htmlConstant)(value)) : this.node().innerHTML;
 }
 
-},{}],415:[function(require,module,exports){
+},{}],416:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19548,7 +19755,7 @@ Selection.prototype = selection.prototype = {
 var _default = selection;
 exports.default = _default;
 
-},{"./append.js":401,"./attr.js":402,"./call.js":403,"./classed.js":404,"./clone.js":405,"./data.js":406,"./datum.js":407,"./dispatch.js":408,"./each.js":409,"./empty.js":410,"./enter.js":411,"./exit.js":412,"./filter.js":413,"./html.js":414,"./insert.js":416,"./iterator.js":417,"./join.js":418,"./lower.js":419,"./merge.js":420,"./node.js":421,"./nodes.js":422,"./on.js":423,"./order.js":424,"./property.js":425,"./raise.js":426,"./remove.js":427,"./select.js":428,"./selectAll.js":429,"./selectChild.js":430,"./selectChildren.js":431,"./size.js":432,"./sort.js":433,"./style.js":435,"./text.js":436}],416:[function(require,module,exports){
+},{"./append.js":402,"./attr.js":403,"./call.js":404,"./classed.js":405,"./clone.js":406,"./data.js":407,"./datum.js":408,"./dispatch.js":409,"./each.js":410,"./empty.js":411,"./enter.js":412,"./exit.js":413,"./filter.js":414,"./html.js":415,"./insert.js":417,"./iterator.js":418,"./join.js":419,"./lower.js":420,"./merge.js":421,"./node.js":422,"./nodes.js":423,"./on.js":424,"./order.js":425,"./property.js":426,"./raise.js":427,"./remove.js":428,"./select.js":429,"./selectAll.js":430,"./selectChild.js":431,"./selectChildren.js":432,"./size.js":433,"./sort.js":434,"./style.js":436,"./text.js":437}],417:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19569,7 +19776,7 @@ function _default(name, before) {
   });
 }
 
-},{"../creator.js":391,"../selector.js":437}],417:[function(require,module,exports){
+},{"../creator.js":392,"../selector.js":438}],418:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19584,7 +19791,7 @@ function* _default() {
   }
 }
 
-},{}],418:[function(require,module,exports){
+},{}],419:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19609,7 +19816,7 @@ function _default(onenter, onupdate, onexit) {
   return enter && update ? enter.merge(update).order() : update;
 }
 
-},{}],419:[function(require,module,exports){
+},{}],420:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19623,7 +19830,7 @@ function _default() {
   return this.each(lower);
 }
 
-},{}],420:[function(require,module,exports){
+},{}],421:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19646,7 +19853,7 @@ function _default(context) {
   return new _index.Selection(merges, this._parents);
 }
 
-},{"./index.js":415}],421:[function(require,module,exports){
+},{"./index.js":416}],422:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19663,7 +19870,7 @@ function _default() {
   return null;
 }
 
-},{}],422:[function(require,module,exports){
+},{}],423:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19674,7 +19881,7 @@ function _default() {
   return Array.from(this);
 }
 
-},{}],423:[function(require,module,exports){
+},{}],424:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19756,7 +19963,7 @@ function _default(typename, value, options) {
   return this;
 }
 
-},{}],424:[function(require,module,exports){
+},{}],425:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19775,7 +19982,7 @@ function _default() {
   return this;
 }
 
-},{}],425:[function(require,module,exports){
+},{}],426:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19802,7 +20009,7 @@ function _default(name, value) {
   return arguments.length > 1 ? this.each((value == null ? propertyRemove : typeof value === "function" ? propertyFunction : propertyConstant)(name, value)) : this.node()[name];
 }
 
-},{}],426:[function(require,module,exports){
+},{}],427:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19816,7 +20023,7 @@ function _default() {
   return this.each(raise);
 }
 
-},{}],427:[function(require,module,exports){
+},{}],428:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19831,7 +20038,7 @@ function _default() {
   return this.each(remove);
 }
 
-},{}],428:[function(require,module,exports){
+},{}],429:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19854,7 +20061,7 @@ function _default(select) {
   return new _index.Selection(subgroups, this._parents);
 }
 
-},{"../selector.js":437,"./index.js":415}],429:[function(require,module,exports){
+},{"../selector.js":438,"./index.js":416}],430:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19883,7 +20090,7 @@ function _default(select) {
   return new _index.Selection(subgroups, parents);
 }
 
-},{"../array.js":388,"../selectorAll.js":438,"./index.js":415}],430:[function(require,module,exports){
+},{"../array.js":389,"../selectorAll.js":439,"./index.js":416}],431:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19904,7 +20111,7 @@ function _default(match) {
   return this.select(match == null ? childFirst : childFind(typeof match === "function" ? match : (0, _matcher.childMatcher)(match)));
 }
 
-},{"../matcher.js":394}],431:[function(require,module,exports){
+},{"../matcher.js":395}],432:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19925,7 +20132,7 @@ function _default(match) {
   return this.selectAll(match == null ? children : childrenFilter(typeof match === "function" ? match : (0, _matcher.childMatcher)(match)));
 }
 
-},{"../matcher.js":394}],432:[function(require,module,exports){
+},{"../matcher.js":395}],433:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19938,7 +20145,7 @@ function _default() {
   return size;
 }
 
-},{}],433:[function(require,module,exports){
+},{}],434:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19965,7 +20172,7 @@ function ascending(a, b) {
   return a < b ? -1 : a > b ? 1 : a >= b ? 0 : NaN;
 }
 
-},{"./index.js":415}],434:[function(require,module,exports){
+},{"./index.js":416}],435:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -19976,7 +20183,7 @@ function _default(update) {
   return new Array(update.length);
 }
 
-},{}],435:[function(require,module,exports){
+},{}],436:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20009,7 +20216,7 @@ function styleValue(node, name) {
   return node.style.getPropertyValue(name) || (0, _window.default)(node).getComputedStyle(node, null).getPropertyValue(name);
 }
 
-},{"../window.js":440}],436:[function(require,module,exports){
+},{"../window.js":441}],437:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20034,7 +20241,7 @@ function _default(value) {
   return arguments.length ? this.each(value == null ? textRemove : (typeof value === "function" ? textFunction : textConstant)(value)) : this.node().textContent;
 }
 
-},{}],437:[function(require,module,exports){
+},{}],438:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20048,7 +20255,7 @@ function _default(selector) {
   };
 }
 
-},{}],438:[function(require,module,exports){
+},{}],439:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20064,7 +20271,7 @@ function _default(selector) {
   };
 }
 
-},{}],439:[function(require,module,exports){
+},{}],440:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20077,7 +20284,7 @@ function _default(event) {
   return event;
 }
 
-},{}],440:[function(require,module,exports){
+},{}],441:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20090,7 +20297,7 @@ function _default(node) {
   || node.defaultView; // node is a Document
 }
 
-},{}],441:[function(require,module,exports){
+},{}],442:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20336,7 +20543,7 @@ function _default() {
   return arc;
 }
 
-},{"./constant.js":445,"./math.js":469,"d3-path":275}],442:[function(require,module,exports){
+},{"./constant.js":446,"./math.js":470,"d3-path":276}],443:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20435,7 +20642,7 @@ function _default(x0, y0, y1) {
   return area;
 }
 
-},{"./array.js":444,"./constant.js":445,"./curve/linear.js":457,"./line.js":466,"./point.js":483,"d3-path":275}],443:[function(require,module,exports){
+},{"./array.js":445,"./constant.js":446,"./curve/linear.js":458,"./line.js":467,"./point.js":484,"d3-path":276}],444:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20479,7 +20686,7 @@ function _default() {
   return a;
 }
 
-},{"./area.js":442,"./curve/radial.js":461,"./lineRadial.js":467}],444:[function(require,module,exports){
+},{"./area.js":443,"./curve/radial.js":462,"./lineRadial.js":468}],445:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20494,7 +20701,7 @@ function _default(x) {
   : Array.from(x); // Map, Set, iterable, string, or anything else
 }
 
-},{}],445:[function(require,module,exports){
+},{}],446:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20507,7 +20714,7 @@ function _default(x) {
   };
 }
 
-},{}],446:[function(require,module,exports){
+},{}],447:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20571,7 +20778,7 @@ function _default(context) {
   return new Basis(context);
 }
 
-},{}],447:[function(require,module,exports){
+},{}],448:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20643,7 +20850,7 @@ function _default(context) {
   return new BasisClosed(context);
 }
 
-},{"../noop.js":470,"./basis.js":446}],448:[function(require,module,exports){
+},{"../noop.js":471,"./basis.js":447}],449:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20699,7 +20906,7 @@ function _default(context) {
   return new BasisOpen(context);
 }
 
-},{"./basis.js":446}],449:[function(require,module,exports){
+},{"./basis.js":447}],450:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20781,7 +20988,7 @@ function bumpRadial(context) {
   return new BumpRadial(context);
 }
 
-},{"../pointRadial.js":484}],450:[function(require,module,exports){
+},{"../pointRadial.js":485}],451:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20834,7 +21041,7 @@ var _default = function custom(beta) {
 }(0.85);
 exports.default = _default;
 
-},{"./basis.js":446}],451:[function(require,module,exports){
+},{"./basis.js":447}],452:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20906,7 +21113,7 @@ var _default = function custom(tension) {
 }(0);
 exports.default = _default;
 
-},{}],452:[function(require,module,exports){
+},{}],453:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -20985,7 +21192,7 @@ var _default = function custom(tension) {
 }(0);
 exports.default = _default;
 
-},{"../noop.js":470,"./cardinal.js":451}],453:[function(require,module,exports){
+},{"../noop.js":471,"./cardinal.js":452}],454:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -21048,7 +21255,7 @@ var _default = function custom(tension) {
 }(0);
 exports.default = _default;
 
-},{"./cardinal.js":451}],454:[function(require,module,exports){
+},{"./cardinal.js":452}],455:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -21143,7 +21350,7 @@ var _default = function custom(alpha) {
 }(0.5);
 exports.default = _default;
 
-},{"../math.js":469,"./cardinal.js":451}],455:[function(require,module,exports){
+},{"../math.js":470,"./cardinal.js":452}],456:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -21229,7 +21436,7 @@ var _default = function custom(alpha) {
 }(0.5);
 exports.default = _default;
 
-},{"../noop.js":470,"./cardinalClosed.js":452,"./catmullRom.js":454}],456:[function(require,module,exports){
+},{"../noop.js":471,"./cardinalClosed.js":453,"./catmullRom.js":455}],457:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -21299,7 +21506,7 @@ var _default = function custom(alpha) {
 }(0.5);
 exports.default = _default;
 
-},{"./cardinalOpen.js":453,"./catmullRom.js":454}],457:[function(require,module,exports){
+},{"./cardinalOpen.js":454,"./catmullRom.js":455}],458:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -21343,7 +21550,7 @@ function _default(context) {
   return new Linear(context);
 }
 
-},{}],458:[function(require,module,exports){
+},{}],459:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -21373,7 +21580,7 @@ function _default(context) {
   return new LinearClosed(context);
 }
 
-},{"../noop.js":470}],459:[function(require,module,exports){
+},{"../noop.js":471}],460:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -21496,7 +21703,7 @@ function monotoneY(context) {
   return new MonotoneY(context);
 }
 
-},{}],460:[function(require,module,exports){
+},{}],461:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -21565,7 +21772,7 @@ function _default(context) {
   return new Natural(context);
 }
 
-},{}],461:[function(require,module,exports){
+},{}],462:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -21605,7 +21812,7 @@ function curveRadial(curve) {
   return radial;
 }
 
-},{"./linear.js":457}],462:[function(require,module,exports){
+},{"./linear.js":458}],463:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -21670,7 +21877,7 @@ function stepAfter(context) {
   return new Step(context, 1);
 }
 
-},{}],463:[function(require,module,exports){
+},{}],464:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -21681,7 +21888,7 @@ function _default(a, b) {
   return b < a ? -1 : b > a ? 1 : b >= a ? 0 : NaN;
 }
 
-},{}],464:[function(require,module,exports){
+},{}],465:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -21692,7 +21899,7 @@ function _default(d) {
   return d;
 }
 
-},{}],465:[function(require,module,exports){
+},{}],466:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22124,7 +22331,7 @@ function _getRequireWildcardCache(nodeInterop) { if (typeof WeakMap !== "functio
 function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(nodeInterop); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (key !== "default" && Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./arc.js":441,"./area.js":442,"./areaRadial.js":443,"./curve/basis.js":446,"./curve/basisClosed.js":447,"./curve/basisOpen.js":448,"./curve/bump.js":449,"./curve/bundle.js":450,"./curve/cardinal.js":451,"./curve/cardinalClosed.js":452,"./curve/cardinalOpen.js":453,"./curve/catmullRom.js":454,"./curve/catmullRomClosed.js":455,"./curve/catmullRomOpen.js":456,"./curve/linear.js":457,"./curve/linearClosed.js":458,"./curve/monotone.js":459,"./curve/natural.js":460,"./curve/step.js":462,"./line.js":466,"./lineRadial.js":467,"./link.js":468,"./offset/diverging.js":471,"./offset/expand.js":472,"./offset/none.js":473,"./offset/silhouette.js":474,"./offset/wiggle.js":475,"./order/appearance.js":476,"./order/ascending.js":477,"./order/descending.js":478,"./order/insideOut.js":479,"./order/none.js":480,"./order/reverse.js":481,"./pie.js":482,"./pointRadial.js":484,"./stack.js":485,"./symbol.js":486,"./symbol/asterisk.js":487,"./symbol/circle.js":488,"./symbol/cross.js":489,"./symbol/diamond.js":490,"./symbol/diamond2.js":491,"./symbol/plus.js":492,"./symbol/square.js":493,"./symbol/square2.js":494,"./symbol/star.js":495,"./symbol/triangle.js":496,"./symbol/triangle2.js":497,"./symbol/wye.js":498,"./symbol/x.js":499}],466:[function(require,module,exports){
+},{"./arc.js":442,"./area.js":443,"./areaRadial.js":444,"./curve/basis.js":447,"./curve/basisClosed.js":448,"./curve/basisOpen.js":449,"./curve/bump.js":450,"./curve/bundle.js":451,"./curve/cardinal.js":452,"./curve/cardinalClosed.js":453,"./curve/cardinalOpen.js":454,"./curve/catmullRom.js":455,"./curve/catmullRomClosed.js":456,"./curve/catmullRomOpen.js":457,"./curve/linear.js":458,"./curve/linearClosed.js":459,"./curve/monotone.js":460,"./curve/natural.js":461,"./curve/step.js":463,"./line.js":467,"./lineRadial.js":468,"./link.js":469,"./offset/diverging.js":472,"./offset/expand.js":473,"./offset/none.js":474,"./offset/silhouette.js":475,"./offset/wiggle.js":476,"./order/appearance.js":477,"./order/ascending.js":478,"./order/descending.js":479,"./order/insideOut.js":480,"./order/none.js":481,"./order/reverse.js":482,"./pie.js":483,"./pointRadial.js":485,"./stack.js":486,"./symbol.js":487,"./symbol/asterisk.js":488,"./symbol/circle.js":489,"./symbol/cross.js":490,"./symbol/diamond.js":491,"./symbol/diamond2.js":492,"./symbol/plus.js":493,"./symbol/square.js":494,"./symbol/square2.js":495,"./symbol/star.js":496,"./symbol/triangle.js":497,"./symbol/triangle2.js":498,"./symbol/wye.js":499,"./symbol/x.js":500}],467:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22177,7 +22384,7 @@ function _default(x, y) {
   return line;
 }
 
-},{"./array.js":444,"./constant.js":445,"./curve/linear.js":457,"./point.js":483,"d3-path":275}],467:[function(require,module,exports){
+},{"./array.js":445,"./constant.js":446,"./curve/linear.js":458,"./point.js":484,"d3-path":276}],468:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22203,7 +22410,7 @@ function _default() {
   return lineRadial((0, _line.default)().curve(_radial.curveRadialLinear));
 }
 
-},{"./curve/radial.js":461,"./line.js":466}],468:[function(require,module,exports){
+},{"./curve/radial.js":462,"./line.js":467}],469:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22274,7 +22481,7 @@ function linkRadial() {
   return l;
 }
 
-},{"./array.js":444,"./constant.js":445,"./curve/bump.js":449,"./point.js":483,"d3-path":275}],469:[function(require,module,exports){
+},{"./array.js":445,"./constant.js":446,"./curve/bump.js":450,"./point.js":484,"d3-path":276}],470:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22313,9 +22520,9 @@ function asin(x) {
   return x >= 1 ? halfPi : x <= -1 ? -halfPi : Math.asin(x);
 }
 
-},{}],470:[function(require,module,exports){
-arguments[4][90][0].apply(exports,arguments)
-},{"dup":90}],471:[function(require,module,exports){
+},{}],471:[function(require,module,exports){
+arguments[4][91][0].apply(exports,arguments)
+},{"dup":91}],472:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22337,7 +22544,7 @@ function _default(series, order) {
   }
 }
 
-},{}],472:[function(require,module,exports){
+},{}],473:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22355,7 +22562,7 @@ function _default(series, order) {
   (0, _none.default)(series, order);
 }
 
-},{"./none.js":473}],473:[function(require,module,exports){
+},{"./none.js":474}],474:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22372,7 +22579,7 @@ function _default(series, order) {
   }
 }
 
-},{}],474:[function(require,module,exports){
+},{}],475:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22390,7 +22597,7 @@ function _default(series, order) {
   (0, _none.default)(series, order);
 }
 
-},{"./none.js":473}],475:[function(require,module,exports){
+},{"./none.js":474}],476:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22422,7 +22629,7 @@ function _default(series, order) {
   (0, _none.default)(series, order);
 }
 
-},{"./none.js":473}],476:[function(require,module,exports){
+},{"./none.js":474}],477:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22447,7 +22654,7 @@ function peak(series) {
   return j;
 }
 
-},{"./none.js":480}],477:[function(require,module,exports){
+},{"./none.js":481}],478:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22472,7 +22679,7 @@ function sum(series) {
   return s;
 }
 
-},{"./none.js":480}],478:[function(require,module,exports){
+},{"./none.js":481}],479:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22485,7 +22692,7 @@ function _default(series) {
   return (0, _ascending.default)(series).reverse();
 }
 
-},{"./ascending.js":477}],479:[function(require,module,exports){
+},{"./ascending.js":478}],480:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22518,7 +22725,7 @@ function _default(series) {
   return bottoms.reverse().concat(tops);
 }
 
-},{"./appearance.js":476,"./ascending.js":477}],480:[function(require,module,exports){
+},{"./appearance.js":477,"./ascending.js":478}],481:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22532,7 +22739,7 @@ function _default(series) {
   return o;
 }
 
-},{}],481:[function(require,module,exports){
+},{}],482:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22545,7 +22752,7 @@ function _default(series) {
   return (0, _none.default)(series).reverse();
 }
 
-},{"./none.js":480}],482:[function(require,module,exports){
+},{"./none.js":481}],483:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22626,7 +22833,7 @@ function _default() {
   return pie;
 }
 
-},{"./array.js":444,"./constant.js":445,"./descending.js":463,"./identity.js":464,"./math.js":469}],483:[function(require,module,exports){
+},{"./array.js":445,"./constant.js":446,"./descending.js":464,"./identity.js":465,"./math.js":470}],484:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22641,7 +22848,7 @@ function y(p) {
   return p[1];
 }
 
-},{}],484:[function(require,module,exports){
+},{}],485:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22652,7 +22859,7 @@ function _default(x, y) {
   return [(y = +y) * Math.cos(x -= Math.PI / 2), y * Math.sin(x)];
 }
 
-},{}],485:[function(require,module,exports){
+},{}],486:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22709,7 +22916,7 @@ function _default() {
   return stack;
 }
 
-},{"./array.js":444,"./constant.js":445,"./offset/none.js":473,"./order/none.js":480}],486:[function(require,module,exports){
+},{"./array.js":445,"./constant.js":446,"./offset/none.js":474,"./order/none.js":481}],487:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22762,7 +22969,7 @@ function Symbol(type, size) {
   return symbol;
 }
 
-},{"./constant.js":445,"./symbol/asterisk.js":487,"./symbol/circle.js":488,"./symbol/cross.js":489,"./symbol/diamond.js":490,"./symbol/diamond2.js":491,"./symbol/plus.js":492,"./symbol/square.js":493,"./symbol/square2.js":494,"./symbol/star.js":495,"./symbol/triangle.js":496,"./symbol/triangle2.js":497,"./symbol/wye.js":498,"./symbol/x.js":499,"d3-path":275}],487:[function(require,module,exports){
+},{"./constant.js":446,"./symbol/asterisk.js":488,"./symbol/circle.js":489,"./symbol/cross.js":490,"./symbol/diamond.js":491,"./symbol/diamond2.js":492,"./symbol/plus.js":493,"./symbol/square.js":494,"./symbol/square2.js":495,"./symbol/star.js":496,"./symbol/triangle.js":497,"./symbol/triangle2.js":498,"./symbol/wye.js":499,"./symbol/x.js":500,"d3-path":276}],488:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22786,7 +22993,7 @@ var _default = {
 };
 exports.default = _default;
 
-},{"../math.js":469}],488:[function(require,module,exports){
+},{"../math.js":470}],489:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22803,7 +23010,7 @@ var _default = {
 };
 exports.default = _default;
 
-},{"../math.js":469}],489:[function(require,module,exports){
+},{"../math.js":470}],490:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22831,7 +23038,7 @@ var _default = {
 };
 exports.default = _default;
 
-},{"../math.js":469}],490:[function(require,module,exports){
+},{"../math.js":470}],491:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22854,7 +23061,7 @@ var _default = {
 };
 exports.default = _default;
 
-},{"../math.js":469}],491:[function(require,module,exports){
+},{"../math.js":470}],492:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22874,7 +23081,7 @@ var _default = {
 };
 exports.default = _default;
 
-},{"../math.js":469}],492:[function(require,module,exports){
+},{"../math.js":470}],493:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22893,7 +23100,7 @@ var _default = {
 };
 exports.default = _default;
 
-},{"../math.js":469}],493:[function(require,module,exports){
+},{"../math.js":470}],494:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22910,7 +23117,7 @@ var _default = {
 };
 exports.default = _default;
 
-},{"../math.js":469}],494:[function(require,module,exports){
+},{"../math.js":470}],495:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22930,7 +23137,7 @@ var _default = {
 };
 exports.default = _default;
 
-},{"../math.js":469}],495:[function(require,module,exports){
+},{"../math.js":470}],496:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22961,7 +23168,7 @@ var _default = {
 };
 exports.default = _default;
 
-},{"../math.js":469}],496:[function(require,module,exports){
+},{"../math.js":470}],497:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -22981,7 +23188,7 @@ var _default = {
 };
 exports.default = _default;
 
-},{"../math.js":469}],497:[function(require,module,exports){
+},{"../math.js":470}],498:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23003,7 +23210,7 @@ var _default = {
 };
 exports.default = _default;
 
-},{"../math.js":469}],498:[function(require,module,exports){
+},{"../math.js":470}],499:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23038,7 +23245,7 @@ var _default = {
 };
 exports.default = _default;
 
-},{"../math.js":469}],499:[function(require,module,exports){
+},{"../math.js":470}],500:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23057,7 +23264,7 @@ var _default = {
 };
 exports.default = _default;
 
-},{"../math.js":469}],500:[function(require,module,exports){
+},{"../math.js":470}],501:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23095,7 +23302,7 @@ function defaultLocale(definition) {
   return locale;
 }
 
-},{"./locale.js":504}],501:[function(require,module,exports){
+},{"./locale.js":505}],502:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23157,7 +23364,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 function _getRequireWildcardCache(nodeInterop) { if (typeof WeakMap !== "function") return null; var cacheBabelInterop = new WeakMap(); var cacheNodeInterop = new WeakMap(); return (_getRequireWildcardCache = function (nodeInterop) { return nodeInterop ? cacheNodeInterop : cacheBabelInterop; })(nodeInterop); }
 function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(nodeInterop); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (key !== "default" && Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
 
-},{"./defaultLocale.js":500,"./isoFormat.js":502,"./isoParse.js":503,"./locale.js":504}],502:[function(require,module,exports){
+},{"./defaultLocale.js":501,"./isoFormat.js":503,"./isoParse.js":504,"./locale.js":505}],503:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23174,7 +23381,7 @@ var formatIso = Date.prototype.toISOString ? formatIsoNative : (0, _defaultLocal
 var _default = formatIso;
 exports.default = _default;
 
-},{"./defaultLocale.js":500}],503:[function(require,module,exports){
+},{"./defaultLocale.js":501}],504:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23191,7 +23398,7 @@ var parseIso = +new Date("2000-01-01T00:00:00.000Z") ? parseIsoNative : (0, _def
 var _default = parseIso;
 exports.default = _default;
 
-},{"./defaultLocale.js":500,"./isoFormat.js":502}],504:[function(require,module,exports){
+},{"./defaultLocale.js":501,"./isoFormat.js":503}],505:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23799,23 +24006,45 @@ function formatUnixTimestampSeconds(d) {
   return Math.floor(+d / 1000);
 }
 
-},{"d3-time":508}],505:[function(require,module,exports){
+},{"d3-time":509}],506:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
-exports.default = exports.days = void 0;
-var _interval = _interopRequireDefault(require("./interval.js"));
+exports.utcDays = exports.utcDay = exports.unixDays = exports.unixDay = exports.timeDays = exports.timeDay = void 0;
+var _interval = require("./interval.js");
 var _duration = require("./duration.js");
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-var day = (0, _interval.default)(date => date.setHours(0, 0, 0, 0), (date, step) => date.setDate(date.getDate() + step), (start, end) => (end - start - (end.getTimezoneOffset() - start.getTimezoneOffset()) * _duration.durationMinute) / _duration.durationDay, date => date.getDate() - 1);
-var _default = day;
-exports.default = _default;
-var days = day.range;
-exports.days = days;
+const timeDay = (0, _interval.timeInterval)(date => date.setHours(0, 0, 0, 0), (date, step) => date.setDate(date.getDate() + step), (start, end) => (end - start - (end.getTimezoneOffset() - start.getTimezoneOffset()) * _duration.durationMinute) / _duration.durationDay, date => date.getDate() - 1);
+exports.timeDay = timeDay;
+const timeDays = timeDay.range;
+exports.timeDays = timeDays;
+const utcDay = (0, _interval.timeInterval)(date => {
+  date.setUTCHours(0, 0, 0, 0);
+}, (date, step) => {
+  date.setUTCDate(date.getUTCDate() + step);
+}, (start, end) => {
+  return (end - start) / _duration.durationDay;
+}, date => {
+  return date.getUTCDate() - 1;
+});
+exports.utcDay = utcDay;
+const utcDays = utcDay.range;
+exports.utcDays = utcDays;
+const unixDay = (0, _interval.timeInterval)(date => {
+  date.setUTCHours(0, 0, 0, 0);
+}, (date, step) => {
+  date.setUTCDate(date.getUTCDate() + step);
+}, (start, end) => {
+  return (end - start) / _duration.durationDay;
+}, date => {
+  return Math.floor(date / _duration.durationDay);
+});
+exports.unixDay = unixDay;
+const unixDays = unixDay.range;
+exports.unixDays = unixDays;
 
-},{"./duration.js":506,"./interval.js":509}],506:[function(require,module,exports){
+},{"./duration.js":507,"./interval.js":510}],507:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23837,31 +24066,41 @@ exports.durationMonth = durationMonth;
 const durationYear = durationDay * 365;
 exports.durationYear = durationYear;
 
-},{}],507:[function(require,module,exports){
+},{}],508:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
-exports.hours = exports.default = void 0;
-var _interval = _interopRequireDefault(require("./interval.js"));
+exports.utcHours = exports.utcHour = exports.timeHours = exports.timeHour = void 0;
+var _interval = require("./interval.js");
 var _duration = require("./duration.js");
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-var hour = (0, _interval.default)(function (date) {
+const timeHour = (0, _interval.timeInterval)(date => {
   date.setTime(date - date.getMilliseconds() - date.getSeconds() * _duration.durationSecond - date.getMinutes() * _duration.durationMinute);
-}, function (date, step) {
+}, (date, step) => {
   date.setTime(+date + step * _duration.durationHour);
-}, function (start, end) {
+}, (start, end) => {
   return (end - start) / _duration.durationHour;
-}, function (date) {
+}, date => {
   return date.getHours();
 });
-var _default = hour;
-exports.default = _default;
-var hours = hour.range;
-exports.hours = hours;
+exports.timeHour = timeHour;
+const timeHours = timeHour.range;
+exports.timeHours = timeHours;
+const utcHour = (0, _interval.timeInterval)(date => {
+  date.setUTCMinutes(0, 0, 0);
+}, (date, step) => {
+  date.setTime(+date + step * _duration.durationHour);
+}, (start, end) => {
+  return (end - start) / _duration.durationHour;
+}, date => {
+  return date.getUTCHours();
+});
+exports.utcHour = utcHour;
+const utcHours = utcHour.range;
+exports.utcHours = utcHours;
 
-},{"./duration.js":506,"./interval.js":509}],508:[function(require,module,exports){
+},{"./duration.js":507,"./interval.js":510}],509:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -23870,49 +24109,49 @@ Object.defineProperty(exports, "__esModule", {
 Object.defineProperty(exports, "timeDay", {
   enumerable: true,
   get: function () {
-    return _day.default;
+    return _day.timeDay;
   }
 });
 Object.defineProperty(exports, "timeDays", {
   enumerable: true,
   get: function () {
-    return _day.days;
+    return _day.timeDays;
   }
 });
 Object.defineProperty(exports, "timeFriday", {
   enumerable: true,
   get: function () {
-    return _week.friday;
+    return _week.timeFriday;
   }
 });
 Object.defineProperty(exports, "timeFridays", {
   enumerable: true,
   get: function () {
-    return _week.fridays;
+    return _week.timeFridays;
   }
 });
 Object.defineProperty(exports, "timeHour", {
   enumerable: true,
   get: function () {
-    return _hour.default;
+    return _hour.timeHour;
   }
 });
 Object.defineProperty(exports, "timeHours", {
   enumerable: true,
   get: function () {
-    return _hour.hours;
+    return _hour.timeHours;
   }
 });
 Object.defineProperty(exports, "timeInterval", {
   enumerable: true,
   get: function () {
-    return _interval.default;
+    return _interval.timeInterval;
   }
 });
 Object.defineProperty(exports, "timeMillisecond", {
   enumerable: true,
   get: function () {
-    return _millisecond.default;
+    return _millisecond.millisecond;
   }
 });
 Object.defineProperty(exports, "timeMilliseconds", {
@@ -23924,55 +24163,55 @@ Object.defineProperty(exports, "timeMilliseconds", {
 Object.defineProperty(exports, "timeMinute", {
   enumerable: true,
   get: function () {
-    return _minute.default;
+    return _minute.timeMinute;
   }
 });
 Object.defineProperty(exports, "timeMinutes", {
   enumerable: true,
   get: function () {
-    return _minute.minutes;
+    return _minute.timeMinutes;
   }
 });
 Object.defineProperty(exports, "timeMonday", {
   enumerable: true,
   get: function () {
-    return _week.monday;
+    return _week.timeMonday;
   }
 });
 Object.defineProperty(exports, "timeMondays", {
   enumerable: true,
   get: function () {
-    return _week.mondays;
+    return _week.timeMondays;
   }
 });
 Object.defineProperty(exports, "timeMonth", {
   enumerable: true,
   get: function () {
-    return _month.default;
+    return _month.timeMonth;
   }
 });
 Object.defineProperty(exports, "timeMonths", {
   enumerable: true,
   get: function () {
-    return _month.months;
+    return _month.timeMonths;
   }
 });
 Object.defineProperty(exports, "timeSaturday", {
   enumerable: true,
   get: function () {
-    return _week.saturday;
+    return _week.timeSaturday;
   }
 });
 Object.defineProperty(exports, "timeSaturdays", {
   enumerable: true,
   get: function () {
-    return _week.saturdays;
+    return _week.timeSaturdays;
   }
 });
 Object.defineProperty(exports, "timeSecond", {
   enumerable: true,
   get: function () {
-    return _second.default;
+    return _second.second;
   }
 });
 Object.defineProperty(exports, "timeSeconds", {
@@ -23984,25 +24223,25 @@ Object.defineProperty(exports, "timeSeconds", {
 Object.defineProperty(exports, "timeSunday", {
   enumerable: true,
   get: function () {
-    return _week.sunday;
+    return _week.timeSunday;
   }
 });
 Object.defineProperty(exports, "timeSundays", {
   enumerable: true,
   get: function () {
-    return _week.sundays;
+    return _week.timeSundays;
   }
 });
 Object.defineProperty(exports, "timeThursday", {
   enumerable: true,
   get: function () {
-    return _week.thursday;
+    return _week.timeThursday;
   }
 });
 Object.defineProperty(exports, "timeThursdays", {
   enumerable: true,
   get: function () {
-    return _week.thursdays;
+    return _week.timeThursdays;
   }
 });
 Object.defineProperty(exports, "timeTickInterval", {
@@ -24020,91 +24259,103 @@ Object.defineProperty(exports, "timeTicks", {
 Object.defineProperty(exports, "timeTuesday", {
   enumerable: true,
   get: function () {
-    return _week.tuesday;
+    return _week.timeTuesday;
   }
 });
 Object.defineProperty(exports, "timeTuesdays", {
   enumerable: true,
   get: function () {
-    return _week.tuesdays;
+    return _week.timeTuesdays;
   }
 });
 Object.defineProperty(exports, "timeWednesday", {
   enumerable: true,
   get: function () {
-    return _week.wednesday;
+    return _week.timeWednesday;
   }
 });
 Object.defineProperty(exports, "timeWednesdays", {
   enumerable: true,
   get: function () {
-    return _week.wednesdays;
+    return _week.timeWednesdays;
   }
 });
 Object.defineProperty(exports, "timeWeek", {
   enumerable: true,
   get: function () {
-    return _week.sunday;
+    return _week.timeSunday;
   }
 });
 Object.defineProperty(exports, "timeWeeks", {
   enumerable: true,
   get: function () {
-    return _week.sundays;
+    return _week.timeSundays;
   }
 });
 Object.defineProperty(exports, "timeYear", {
   enumerable: true,
   get: function () {
-    return _year.default;
+    return _year.timeYear;
   }
 });
 Object.defineProperty(exports, "timeYears", {
   enumerable: true,
   get: function () {
-    return _year.years;
+    return _year.timeYears;
+  }
+});
+Object.defineProperty(exports, "unixDay", {
+  enumerable: true,
+  get: function () {
+    return _day.unixDay;
+  }
+});
+Object.defineProperty(exports, "unixDays", {
+  enumerable: true,
+  get: function () {
+    return _day.unixDays;
   }
 });
 Object.defineProperty(exports, "utcDay", {
   enumerable: true,
   get: function () {
-    return _utcDay.default;
+    return _day.utcDay;
   }
 });
 Object.defineProperty(exports, "utcDays", {
   enumerable: true,
   get: function () {
-    return _utcDay.utcDays;
+    return _day.utcDays;
   }
 });
 Object.defineProperty(exports, "utcFriday", {
   enumerable: true,
   get: function () {
-    return _utcWeek.utcFriday;
+    return _week.utcFriday;
   }
 });
 Object.defineProperty(exports, "utcFridays", {
   enumerable: true,
   get: function () {
-    return _utcWeek.utcFridays;
+    return _week.utcFridays;
   }
 });
 Object.defineProperty(exports, "utcHour", {
   enumerable: true,
   get: function () {
-    return _utcHour.default;
+    return _hour.utcHour;
   }
 });
 Object.defineProperty(exports, "utcHours", {
   enumerable: true,
   get: function () {
-    return _utcHour.utcHours;
+    return _hour.utcHours;
   }
 });
 Object.defineProperty(exports, "utcMillisecond", {
   enumerable: true,
   get: function () {
-    return _millisecond.default;
+    return _millisecond.millisecond;
   }
 });
 Object.defineProperty(exports, "utcMilliseconds", {
@@ -24116,55 +24367,55 @@ Object.defineProperty(exports, "utcMilliseconds", {
 Object.defineProperty(exports, "utcMinute", {
   enumerable: true,
   get: function () {
-    return _utcMinute.default;
+    return _minute.utcMinute;
   }
 });
 Object.defineProperty(exports, "utcMinutes", {
   enumerable: true,
   get: function () {
-    return _utcMinute.utcMinutes;
+    return _minute.utcMinutes;
   }
 });
 Object.defineProperty(exports, "utcMonday", {
   enumerable: true,
   get: function () {
-    return _utcWeek.utcMonday;
+    return _week.utcMonday;
   }
 });
 Object.defineProperty(exports, "utcMondays", {
   enumerable: true,
   get: function () {
-    return _utcWeek.utcMondays;
+    return _week.utcMondays;
   }
 });
 Object.defineProperty(exports, "utcMonth", {
   enumerable: true,
   get: function () {
-    return _utcMonth.default;
+    return _month.utcMonth;
   }
 });
 Object.defineProperty(exports, "utcMonths", {
   enumerable: true,
   get: function () {
-    return _utcMonth.utcMonths;
+    return _month.utcMonths;
   }
 });
 Object.defineProperty(exports, "utcSaturday", {
   enumerable: true,
   get: function () {
-    return _utcWeek.utcSaturday;
+    return _week.utcSaturday;
   }
 });
 Object.defineProperty(exports, "utcSaturdays", {
   enumerable: true,
   get: function () {
-    return _utcWeek.utcSaturdays;
+    return _week.utcSaturdays;
   }
 });
 Object.defineProperty(exports, "utcSecond", {
   enumerable: true,
   get: function () {
-    return _second.default;
+    return _second.second;
   }
 });
 Object.defineProperty(exports, "utcSeconds", {
@@ -24176,25 +24427,25 @@ Object.defineProperty(exports, "utcSeconds", {
 Object.defineProperty(exports, "utcSunday", {
   enumerable: true,
   get: function () {
-    return _utcWeek.utcSunday;
+    return _week.utcSunday;
   }
 });
 Object.defineProperty(exports, "utcSundays", {
   enumerable: true,
   get: function () {
-    return _utcWeek.utcSundays;
+    return _week.utcSundays;
   }
 });
 Object.defineProperty(exports, "utcThursday", {
   enumerable: true,
   get: function () {
-    return _utcWeek.utcThursday;
+    return _week.utcThursday;
   }
 });
 Object.defineProperty(exports, "utcThursdays", {
   enumerable: true,
   get: function () {
-    return _utcWeek.utcThursdays;
+    return _week.utcThursdays;
   }
 });
 Object.defineProperty(exports, "utcTickInterval", {
@@ -24212,111 +24463,102 @@ Object.defineProperty(exports, "utcTicks", {
 Object.defineProperty(exports, "utcTuesday", {
   enumerable: true,
   get: function () {
-    return _utcWeek.utcTuesday;
+    return _week.utcTuesday;
   }
 });
 Object.defineProperty(exports, "utcTuesdays", {
   enumerable: true,
   get: function () {
-    return _utcWeek.utcTuesdays;
+    return _week.utcTuesdays;
   }
 });
 Object.defineProperty(exports, "utcWednesday", {
   enumerable: true,
   get: function () {
-    return _utcWeek.utcWednesday;
+    return _week.utcWednesday;
   }
 });
 Object.defineProperty(exports, "utcWednesdays", {
   enumerable: true,
   get: function () {
-    return _utcWeek.utcWednesdays;
+    return _week.utcWednesdays;
   }
 });
 Object.defineProperty(exports, "utcWeek", {
   enumerable: true,
   get: function () {
-    return _utcWeek.utcSunday;
+    return _week.utcSunday;
   }
 });
 Object.defineProperty(exports, "utcWeeks", {
   enumerable: true,
   get: function () {
-    return _utcWeek.utcSundays;
+    return _week.utcSundays;
   }
 });
 Object.defineProperty(exports, "utcYear", {
   enumerable: true,
   get: function () {
-    return _utcYear.default;
+    return _year.utcYear;
   }
 });
 Object.defineProperty(exports, "utcYears", {
   enumerable: true,
   get: function () {
-    return _utcYear.utcYears;
+    return _year.utcYears;
   }
 });
-var _interval = _interopRequireDefault(require("./interval.js"));
-var _millisecond = _interopRequireWildcard(require("./millisecond.js"));
-var _second = _interopRequireWildcard(require("./second.js"));
-var _minute = _interopRequireWildcard(require("./minute.js"));
-var _hour = _interopRequireWildcard(require("./hour.js"));
-var _day = _interopRequireWildcard(require("./day.js"));
+var _interval = require("./interval.js");
+var _millisecond = require("./millisecond.js");
+var _second = require("./second.js");
+var _minute = require("./minute.js");
+var _hour = require("./hour.js");
+var _day = require("./day.js");
 var _week = require("./week.js");
-var _month = _interopRequireWildcard(require("./month.js"));
-var _year = _interopRequireWildcard(require("./year.js"));
-var _utcMinute = _interopRequireWildcard(require("./utcMinute.js"));
-var _utcHour = _interopRequireWildcard(require("./utcHour.js"));
-var _utcDay = _interopRequireWildcard(require("./utcDay.js"));
-var _utcWeek = require("./utcWeek.js");
-var _utcMonth = _interopRequireWildcard(require("./utcMonth.js"));
-var _utcYear = _interopRequireWildcard(require("./utcYear.js"));
+var _month = require("./month.js");
+var _year = require("./year.js");
 var _ticks = require("./ticks.js");
-function _getRequireWildcardCache(nodeInterop) { if (typeof WeakMap !== "function") return null; var cacheBabelInterop = new WeakMap(); var cacheNodeInterop = new WeakMap(); return (_getRequireWildcardCache = function (nodeInterop) { return nodeInterop ? cacheNodeInterop : cacheBabelInterop; })(nodeInterop); }
-function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(nodeInterop); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (key !== "default" && Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./day.js":505,"./hour.js":507,"./interval.js":509,"./millisecond.js":510,"./minute.js":511,"./month.js":512,"./second.js":513,"./ticks.js":514,"./utcDay.js":515,"./utcHour.js":516,"./utcMinute.js":517,"./utcMonth.js":518,"./utcWeek.js":519,"./utcYear.js":520,"./week.js":521,"./year.js":522}],509:[function(require,module,exports){
+},{"./day.js":506,"./hour.js":508,"./interval.js":510,"./millisecond.js":511,"./minute.js":512,"./month.js":513,"./second.js":514,"./ticks.js":515,"./week.js":516,"./year.js":517}],510:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
-exports.default = newInterval;
-var t0 = new Date(),
+exports.timeInterval = timeInterval;
+const t0 = new Date(),
   t1 = new Date();
-function newInterval(floori, offseti, count, field) {
+function timeInterval(floori, offseti, count, field) {
   function interval(date) {
     return floori(date = arguments.length === 0 ? new Date() : new Date(+date)), date;
   }
-  interval.floor = function (date) {
+  interval.floor = date => {
     return floori(date = new Date(+date)), date;
   };
-  interval.ceil = function (date) {
+  interval.ceil = date => {
     return floori(date = new Date(date - 1)), offseti(date, 1), floori(date), date;
   };
-  interval.round = function (date) {
-    var d0 = interval(date),
+  interval.round = date => {
+    const d0 = interval(date),
       d1 = interval.ceil(date);
     return date - d0 < d1 - date ? d0 : d1;
   };
-  interval.offset = function (date, step) {
+  interval.offset = (date, step) => {
     return offseti(date = new Date(+date), step == null ? 1 : Math.floor(step)), date;
   };
-  interval.range = function (start, stop, step) {
-    var range = [],
-      previous;
+  interval.range = (start, stop, step) => {
+    const range = [];
     start = interval.ceil(start);
     step = step == null ? 1 : Math.floor(step);
     if (!(start < stop) || !(step > 0)) return range; // also handles Invalid Date
+    let previous;
     do range.push(previous = new Date(+start)), offseti(start, step), floori(start); while (previous < start && start < stop);
     return range;
   };
-  interval.filter = function (test) {
-    return newInterval(function (date) {
+  interval.filter = test => {
+    return timeInterval(date => {
       if (date >= date) while (floori(date), !test(date)) date.setTime(date - 1);
-    }, function (date, step) {
+    }, (date, step) => {
       if (date >= date) {
         if (step < 0) while (++step <= 0) {
           while (offseti(date, -1), !test(date)) {} // eslint-disable-line no-empty
@@ -24328,131 +24570,144 @@ function newInterval(floori, offseti, count, field) {
   };
 
   if (count) {
-    interval.count = function (start, end) {
+    interval.count = (start, end) => {
       t0.setTime(+start), t1.setTime(+end);
       floori(t0), floori(t1);
       return Math.floor(count(t0, t1));
     };
-    interval.every = function (step) {
+    interval.every = step => {
       step = Math.floor(step);
-      return !isFinite(step) || !(step > 0) ? null : !(step > 1) ? interval : interval.filter(field ? function (d) {
-        return field(d) % step === 0;
-      } : function (d) {
-        return interval.count(0, d) % step === 0;
-      });
+      return !isFinite(step) || !(step > 0) ? null : !(step > 1) ? interval : interval.filter(field ? d => field(d) % step === 0 : d => interval.count(0, d) % step === 0);
     };
   }
   return interval;
 }
 
-},{}],510:[function(require,module,exports){
+},{}],511:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
-exports.milliseconds = exports.default = void 0;
-var _interval = _interopRequireDefault(require("./interval.js"));
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-var millisecond = (0, _interval.default)(function () {
+exports.milliseconds = exports.millisecond = void 0;
+var _interval = require("./interval.js");
+const millisecond = (0, _interval.timeInterval)(() => {
   // noop
-}, function (date, step) {
+}, (date, step) => {
   date.setTime(+date + step);
-}, function (start, end) {
+}, (start, end) => {
   return end - start;
 });
 
 // An optimized implementation for this simple case.
-millisecond.every = function (k) {
+exports.millisecond = millisecond;
+millisecond.every = k => {
   k = Math.floor(k);
   if (!isFinite(k) || !(k > 0)) return null;
   if (!(k > 1)) return millisecond;
-  return (0, _interval.default)(function (date) {
+  return (0, _interval.timeInterval)(date => {
     date.setTime(Math.floor(date / k) * k);
-  }, function (date, step) {
+  }, (date, step) => {
     date.setTime(+date + step * k);
-  }, function (start, end) {
+  }, (start, end) => {
     return (end - start) / k;
   });
 };
-var _default = millisecond;
-exports.default = _default;
-var milliseconds = millisecond.range;
+const milliseconds = millisecond.range;
 exports.milliseconds = milliseconds;
 
-},{"./interval.js":509}],511:[function(require,module,exports){
+},{"./interval.js":510}],512:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
-exports.minutes = exports.default = void 0;
-var _interval = _interopRequireDefault(require("./interval.js"));
+exports.utcMinutes = exports.utcMinute = exports.timeMinutes = exports.timeMinute = void 0;
+var _interval = require("./interval.js");
 var _duration = require("./duration.js");
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-var minute = (0, _interval.default)(function (date) {
+const timeMinute = (0, _interval.timeInterval)(date => {
   date.setTime(date - date.getMilliseconds() - date.getSeconds() * _duration.durationSecond);
-}, function (date, step) {
+}, (date, step) => {
   date.setTime(+date + step * _duration.durationMinute);
-}, function (start, end) {
+}, (start, end) => {
   return (end - start) / _duration.durationMinute;
-}, function (date) {
+}, date => {
   return date.getMinutes();
 });
-var _default = minute;
-exports.default = _default;
-var minutes = minute.range;
-exports.minutes = minutes;
+exports.timeMinute = timeMinute;
+const timeMinutes = timeMinute.range;
+exports.timeMinutes = timeMinutes;
+const utcMinute = (0, _interval.timeInterval)(date => {
+  date.setUTCSeconds(0, 0);
+}, (date, step) => {
+  date.setTime(+date + step * _duration.durationMinute);
+}, (start, end) => {
+  return (end - start) / _duration.durationMinute;
+}, date => {
+  return date.getUTCMinutes();
+});
+exports.utcMinute = utcMinute;
+const utcMinutes = utcMinute.range;
+exports.utcMinutes = utcMinutes;
 
-},{"./duration.js":506,"./interval.js":509}],512:[function(require,module,exports){
+},{"./duration.js":507,"./interval.js":510}],513:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
-exports.months = exports.default = void 0;
-var _interval = _interopRequireDefault(require("./interval.js"));
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-var month = (0, _interval.default)(function (date) {
+exports.utcMonths = exports.utcMonth = exports.timeMonths = exports.timeMonth = void 0;
+var _interval = require("./interval.js");
+const timeMonth = (0, _interval.timeInterval)(date => {
   date.setDate(1);
   date.setHours(0, 0, 0, 0);
-}, function (date, step) {
+}, (date, step) => {
   date.setMonth(date.getMonth() + step);
-}, function (start, end) {
+}, (start, end) => {
   return end.getMonth() - start.getMonth() + (end.getFullYear() - start.getFullYear()) * 12;
-}, function (date) {
+}, date => {
   return date.getMonth();
 });
-var _default = month;
-exports.default = _default;
-var months = month.range;
-exports.months = months;
+exports.timeMonth = timeMonth;
+const timeMonths = timeMonth.range;
+exports.timeMonths = timeMonths;
+const utcMonth = (0, _interval.timeInterval)(date => {
+  date.setUTCDate(1);
+  date.setUTCHours(0, 0, 0, 0);
+}, (date, step) => {
+  date.setUTCMonth(date.getUTCMonth() + step);
+}, (start, end) => {
+  return end.getUTCMonth() - start.getUTCMonth() + (end.getUTCFullYear() - start.getUTCFullYear()) * 12;
+}, date => {
+  return date.getUTCMonth();
+});
+exports.utcMonth = utcMonth;
+const utcMonths = utcMonth.range;
+exports.utcMonths = utcMonths;
 
-},{"./interval.js":509}],513:[function(require,module,exports){
+},{"./interval.js":510}],514:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
-exports.seconds = exports.default = void 0;
-var _interval = _interopRequireDefault(require("./interval.js"));
+exports.seconds = exports.second = void 0;
+var _interval = require("./interval.js");
 var _duration = require("./duration.js");
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-var second = (0, _interval.default)(function (date) {
+const second = (0, _interval.timeInterval)(date => {
   date.setTime(date - date.getMilliseconds());
-}, function (date, step) {
+}, (date, step) => {
   date.setTime(+date + step * _duration.durationSecond);
-}, function (start, end) {
+}, (start, end) => {
   return (end - start) / _duration.durationSecond;
-}, function (date) {
+}, date => {
   return date.getUTCSeconds();
 });
-var _default = second;
-exports.default = _default;
-var seconds = second.range;
+exports.second = second;
+const seconds = second.range;
 exports.seconds = seconds;
 
-},{"./duration.js":506,"./interval.js":509}],514:[function(require,module,exports){
+},{"./duration.js":507,"./interval.js":510}],515:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -24461,23 +24716,16 @@ Object.defineProperty(exports, "__esModule", {
 exports.utcTicks = exports.utcTickInterval = exports.timeTicks = exports.timeTickInterval = void 0;
 var _d3Array = require("d3-array");
 var _duration = require("./duration.js");
-var _millisecond = _interopRequireDefault(require("./millisecond.js"));
-var _second = _interopRequireDefault(require("./second.js"));
-var _minute = _interopRequireDefault(require("./minute.js"));
-var _hour = _interopRequireDefault(require("./hour.js"));
-var _day = _interopRequireDefault(require("./day.js"));
+var _millisecond = require("./millisecond.js");
+var _second = require("./second.js");
+var _minute = require("./minute.js");
+var _hour = require("./hour.js");
+var _day = require("./day.js");
 var _week = require("./week.js");
-var _month = _interopRequireDefault(require("./month.js"));
-var _year = _interopRequireDefault(require("./year.js"));
-var _utcMinute = _interopRequireDefault(require("./utcMinute.js"));
-var _utcHour = _interopRequireDefault(require("./utcHour.js"));
-var _utcDay = _interopRequireDefault(require("./utcDay.js"));
-var _utcWeek = require("./utcWeek.js");
-var _utcMonth = _interopRequireDefault(require("./utcMonth.js"));
-var _utcYear = _interopRequireDefault(require("./utcYear.js"));
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
+var _month = require("./month.js");
+var _year = require("./year.js");
 function ticker(year, month, week, day, hour, minute) {
-  const tickIntervals = [[_second.default, 1, _duration.durationSecond], [_second.default, 5, 5 * _duration.durationSecond], [_second.default, 15, 15 * _duration.durationSecond], [_second.default, 30, 30 * _duration.durationSecond], [minute, 1, _duration.durationMinute], [minute, 5, 5 * _duration.durationMinute], [minute, 15, 15 * _duration.durationMinute], [minute, 30, 30 * _duration.durationMinute], [hour, 1, _duration.durationHour], [hour, 3, 3 * _duration.durationHour], [hour, 6, 6 * _duration.durationHour], [hour, 12, 12 * _duration.durationHour], [day, 1, _duration.durationDay], [day, 2, 2 * _duration.durationDay], [week, 1, _duration.durationWeek], [month, 1, _duration.durationMonth], [month, 3, 3 * _duration.durationMonth], [year, 1, _duration.durationYear]];
+  const tickIntervals = [[_second.second, 1, _duration.durationSecond], [_second.second, 5, 5 * _duration.durationSecond], [_second.second, 15, 15 * _duration.durationSecond], [_second.second, 30, 30 * _duration.durationSecond], [minute, 1, _duration.durationMinute], [minute, 5, 5 * _duration.durationMinute], [minute, 15, 15 * _duration.durationMinute], [minute, 30, 30 * _duration.durationMinute], [hour, 1, _duration.durationHour], [hour, 3, 3 * _duration.durationHour], [hour, 6, 6 * _duration.durationHour], [hour, 12, 12 * _duration.durationHour], [day, 1, _duration.durationDay], [day, 2, 2 * _duration.durationDay], [week, 1, _duration.durationWeek], [month, 1, _duration.durationMonth], [month, 3, 3 * _duration.durationMonth], [year, 1, _duration.durationYear]];
   function ticks(start, stop, count) {
     const reverse = stop < start;
     if (reverse) [start, stop] = [stop, start];
@@ -24489,284 +24737,163 @@ function ticker(year, month, week, day, hour, minute) {
     const target = Math.abs(stop - start) / count;
     const i = (0, _d3Array.bisector)(([,, step]) => step).right(tickIntervals, target);
     if (i === tickIntervals.length) return year.every((0, _d3Array.tickStep)(start / _duration.durationYear, stop / _duration.durationYear, count));
-    if (i === 0) return _millisecond.default.every(Math.max((0, _d3Array.tickStep)(start, stop, count), 1));
+    if (i === 0) return _millisecond.millisecond.every(Math.max((0, _d3Array.tickStep)(start, stop, count), 1));
     const [t, step] = tickIntervals[target / tickIntervals[i - 1][2] < tickIntervals[i][2] / target ? i - 1 : i];
     return t.every(step);
   }
   return [ticks, tickInterval];
 }
-const [utcTicks, utcTickInterval] = ticker(_utcYear.default, _utcMonth.default, _utcWeek.utcSunday, _utcDay.default, _utcHour.default, _utcMinute.default);
+const [utcTicks, utcTickInterval] = ticker(_year.utcYear, _month.utcMonth, _week.utcSunday, _day.unixDay, _hour.utcHour, _minute.utcMinute);
 exports.utcTickInterval = utcTickInterval;
 exports.utcTicks = utcTicks;
-const [timeTicks, timeTickInterval] = ticker(_year.default, _month.default, _week.sunday, _day.default, _hour.default, _minute.default);
+const [timeTicks, timeTickInterval] = ticker(_year.timeYear, _month.timeMonth, _week.timeSunday, _day.timeDay, _hour.timeHour, _minute.timeMinute);
 exports.timeTickInterval = timeTickInterval;
 exports.timeTicks = timeTicks;
 
-},{"./day.js":505,"./duration.js":506,"./hour.js":507,"./millisecond.js":510,"./minute.js":511,"./month.js":512,"./second.js":513,"./utcDay.js":515,"./utcHour.js":516,"./utcMinute.js":517,"./utcMonth.js":518,"./utcWeek.js":519,"./utcYear.js":520,"./week.js":521,"./year.js":522,"d3-array":24}],515:[function(require,module,exports){
+},{"./day.js":506,"./duration.js":507,"./hour.js":508,"./millisecond.js":511,"./minute.js":512,"./month.js":513,"./second.js":514,"./week.js":516,"./year.js":517,"d3-array":25}],516:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
-exports.utcDays = exports.default = void 0;
-var _interval = _interopRequireDefault(require("./interval.js"));
+exports.utcWednesdays = exports.utcWednesday = exports.utcTuesdays = exports.utcTuesday = exports.utcThursdays = exports.utcThursday = exports.utcSundays = exports.utcSunday = exports.utcSaturdays = exports.utcSaturday = exports.utcMondays = exports.utcMonday = exports.utcFridays = exports.utcFriday = exports.timeWednesdays = exports.timeWednesday = exports.timeTuesdays = exports.timeTuesday = exports.timeThursdays = exports.timeThursday = exports.timeSundays = exports.timeSunday = exports.timeSaturdays = exports.timeSaturday = exports.timeMondays = exports.timeMonday = exports.timeFridays = exports.timeFriday = void 0;
+var _interval = require("./interval.js");
 var _duration = require("./duration.js");
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-var utcDay = (0, _interval.default)(function (date) {
-  date.setUTCHours(0, 0, 0, 0);
-}, function (date, step) {
-  date.setUTCDate(date.getUTCDate() + step);
-}, function (start, end) {
-  return (end - start) / _duration.durationDay;
-}, function (date) {
-  return date.getUTCDate() - 1;
-});
-var _default = utcDay;
-exports.default = _default;
-var utcDays = utcDay.range;
-exports.utcDays = utcDays;
-
-},{"./duration.js":506,"./interval.js":509}],516:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.utcHours = exports.default = void 0;
-var _interval = _interopRequireDefault(require("./interval.js"));
-var _duration = require("./duration.js");
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-var utcHour = (0, _interval.default)(function (date) {
-  date.setUTCMinutes(0, 0, 0);
-}, function (date, step) {
-  date.setTime(+date + step * _duration.durationHour);
-}, function (start, end) {
-  return (end - start) / _duration.durationHour;
-}, function (date) {
-  return date.getUTCHours();
-});
-var _default = utcHour;
-exports.default = _default;
-var utcHours = utcHour.range;
-exports.utcHours = utcHours;
-
-},{"./duration.js":506,"./interval.js":509}],517:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.utcMinutes = exports.default = void 0;
-var _interval = _interopRequireDefault(require("./interval.js"));
-var _duration = require("./duration.js");
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-var utcMinute = (0, _interval.default)(function (date) {
-  date.setUTCSeconds(0, 0);
-}, function (date, step) {
-  date.setTime(+date + step * _duration.durationMinute);
-}, function (start, end) {
-  return (end - start) / _duration.durationMinute;
-}, function (date) {
-  return date.getUTCMinutes();
-});
-var _default = utcMinute;
-exports.default = _default;
-var utcMinutes = utcMinute.range;
-exports.utcMinutes = utcMinutes;
-
-},{"./duration.js":506,"./interval.js":509}],518:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.utcMonths = exports.default = void 0;
-var _interval = _interopRequireDefault(require("./interval.js"));
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-var utcMonth = (0, _interval.default)(function (date) {
-  date.setUTCDate(1);
-  date.setUTCHours(0, 0, 0, 0);
-}, function (date, step) {
-  date.setUTCMonth(date.getUTCMonth() + step);
-}, function (start, end) {
-  return end.getUTCMonth() - start.getUTCMonth() + (end.getUTCFullYear() - start.getUTCFullYear()) * 12;
-}, function (date) {
-  return date.getUTCMonth();
-});
-var _default = utcMonth;
-exports.default = _default;
-var utcMonths = utcMonth.range;
-exports.utcMonths = utcMonths;
-
-},{"./interval.js":509}],519:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.utcWednesdays = exports.utcWednesday = exports.utcTuesdays = exports.utcTuesday = exports.utcThursdays = exports.utcThursday = exports.utcSundays = exports.utcSunday = exports.utcSaturdays = exports.utcSaturday = exports.utcMondays = exports.utcMonday = exports.utcFridays = exports.utcFriday = void 0;
-var _interval = _interopRequireDefault(require("./interval.js"));
-var _duration = require("./duration.js");
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-function utcWeekday(i) {
-  return (0, _interval.default)(function (date) {
-    date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 7 - i) % 7);
-    date.setUTCHours(0, 0, 0, 0);
-  }, function (date, step) {
-    date.setUTCDate(date.getUTCDate() + step * 7);
-  }, function (start, end) {
-    return (end - start) / _duration.durationWeek;
-  });
-}
-var utcSunday = utcWeekday(0);
-exports.utcSunday = utcSunday;
-var utcMonday = utcWeekday(1);
-exports.utcMonday = utcMonday;
-var utcTuesday = utcWeekday(2);
-exports.utcTuesday = utcTuesday;
-var utcWednesday = utcWeekday(3);
-exports.utcWednesday = utcWednesday;
-var utcThursday = utcWeekday(4);
-exports.utcThursday = utcThursday;
-var utcFriday = utcWeekday(5);
-exports.utcFriday = utcFriday;
-var utcSaturday = utcWeekday(6);
-exports.utcSaturday = utcSaturday;
-var utcSundays = utcSunday.range;
-exports.utcSundays = utcSundays;
-var utcMondays = utcMonday.range;
-exports.utcMondays = utcMondays;
-var utcTuesdays = utcTuesday.range;
-exports.utcTuesdays = utcTuesdays;
-var utcWednesdays = utcWednesday.range;
-exports.utcWednesdays = utcWednesdays;
-var utcThursdays = utcThursday.range;
-exports.utcThursdays = utcThursdays;
-var utcFridays = utcFriday.range;
-exports.utcFridays = utcFridays;
-var utcSaturdays = utcSaturday.range;
-exports.utcSaturdays = utcSaturdays;
-
-},{"./duration.js":506,"./interval.js":509}],520:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.utcYears = exports.default = void 0;
-var _interval = _interopRequireDefault(require("./interval.js"));
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-var utcYear = (0, _interval.default)(function (date) {
-  date.setUTCMonth(0, 1);
-  date.setUTCHours(0, 0, 0, 0);
-}, function (date, step) {
-  date.setUTCFullYear(date.getUTCFullYear() + step);
-}, function (start, end) {
-  return end.getUTCFullYear() - start.getUTCFullYear();
-}, function (date) {
-  return date.getUTCFullYear();
-});
-
-// An optimized implementation for this simple case.
-utcYear.every = function (k) {
-  return !isFinite(k = Math.floor(k)) || !(k > 0) ? null : (0, _interval.default)(function (date) {
-    date.setUTCFullYear(Math.floor(date.getUTCFullYear() / k) * k);
-    date.setUTCMonth(0, 1);
-    date.setUTCHours(0, 0, 0, 0);
-  }, function (date, step) {
-    date.setUTCFullYear(date.getUTCFullYear() + step * k);
-  });
-};
-var _default = utcYear;
-exports.default = _default;
-var utcYears = utcYear.range;
-exports.utcYears = utcYears;
-
-},{"./interval.js":509}],521:[function(require,module,exports){
-"use strict";
-
-Object.defineProperty(exports, "__esModule", {
-  value: true
-});
-exports.wednesdays = exports.wednesday = exports.tuesdays = exports.tuesday = exports.thursdays = exports.thursday = exports.sundays = exports.sunday = exports.saturdays = exports.saturday = exports.mondays = exports.monday = exports.fridays = exports.friday = void 0;
-var _interval = _interopRequireDefault(require("./interval.js"));
-var _duration = require("./duration.js");
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-function weekday(i) {
-  return (0, _interval.default)(function (date) {
+function timeWeekday(i) {
+  return (0, _interval.timeInterval)(date => {
     date.setDate(date.getDate() - (date.getDay() + 7 - i) % 7);
     date.setHours(0, 0, 0, 0);
-  }, function (date, step) {
+  }, (date, step) => {
     date.setDate(date.getDate() + step * 7);
-  }, function (start, end) {
+  }, (start, end) => {
     return (end - start - (end.getTimezoneOffset() - start.getTimezoneOffset()) * _duration.durationMinute) / _duration.durationWeek;
   });
 }
-var sunday = weekday(0);
-exports.sunday = sunday;
-var monday = weekday(1);
-exports.monday = monday;
-var tuesday = weekday(2);
-exports.tuesday = tuesday;
-var wednesday = weekday(3);
-exports.wednesday = wednesday;
-var thursday = weekday(4);
-exports.thursday = thursday;
-var friday = weekday(5);
-exports.friday = friday;
-var saturday = weekday(6);
-exports.saturday = saturday;
-var sundays = sunday.range;
-exports.sundays = sundays;
-var mondays = monday.range;
-exports.mondays = mondays;
-var tuesdays = tuesday.range;
-exports.tuesdays = tuesdays;
-var wednesdays = wednesday.range;
-exports.wednesdays = wednesdays;
-var thursdays = thursday.range;
-exports.thursdays = thursdays;
-var fridays = friday.range;
-exports.fridays = fridays;
-var saturdays = saturday.range;
-exports.saturdays = saturdays;
+const timeSunday = timeWeekday(0);
+exports.timeSunday = timeSunday;
+const timeMonday = timeWeekday(1);
+exports.timeMonday = timeMonday;
+const timeTuesday = timeWeekday(2);
+exports.timeTuesday = timeTuesday;
+const timeWednesday = timeWeekday(3);
+exports.timeWednesday = timeWednesday;
+const timeThursday = timeWeekday(4);
+exports.timeThursday = timeThursday;
+const timeFriday = timeWeekday(5);
+exports.timeFriday = timeFriday;
+const timeSaturday = timeWeekday(6);
+exports.timeSaturday = timeSaturday;
+const timeSundays = timeSunday.range;
+exports.timeSundays = timeSundays;
+const timeMondays = timeMonday.range;
+exports.timeMondays = timeMondays;
+const timeTuesdays = timeTuesday.range;
+exports.timeTuesdays = timeTuesdays;
+const timeWednesdays = timeWednesday.range;
+exports.timeWednesdays = timeWednesdays;
+const timeThursdays = timeThursday.range;
+exports.timeThursdays = timeThursdays;
+const timeFridays = timeFriday.range;
+exports.timeFridays = timeFridays;
+const timeSaturdays = timeSaturday.range;
+exports.timeSaturdays = timeSaturdays;
+function utcWeekday(i) {
+  return (0, _interval.timeInterval)(date => {
+    date.setUTCDate(date.getUTCDate() - (date.getUTCDay() + 7 - i) % 7);
+    date.setUTCHours(0, 0, 0, 0);
+  }, (date, step) => {
+    date.setUTCDate(date.getUTCDate() + step * 7);
+  }, (start, end) => {
+    return (end - start) / _duration.durationWeek;
+  });
+}
+const utcSunday = utcWeekday(0);
+exports.utcSunday = utcSunday;
+const utcMonday = utcWeekday(1);
+exports.utcMonday = utcMonday;
+const utcTuesday = utcWeekday(2);
+exports.utcTuesday = utcTuesday;
+const utcWednesday = utcWeekday(3);
+exports.utcWednesday = utcWednesday;
+const utcThursday = utcWeekday(4);
+exports.utcThursday = utcThursday;
+const utcFriday = utcWeekday(5);
+exports.utcFriday = utcFriday;
+const utcSaturday = utcWeekday(6);
+exports.utcSaturday = utcSaturday;
+const utcSundays = utcSunday.range;
+exports.utcSundays = utcSundays;
+const utcMondays = utcMonday.range;
+exports.utcMondays = utcMondays;
+const utcTuesdays = utcTuesday.range;
+exports.utcTuesdays = utcTuesdays;
+const utcWednesdays = utcWednesday.range;
+exports.utcWednesdays = utcWednesdays;
+const utcThursdays = utcThursday.range;
+exports.utcThursdays = utcThursdays;
+const utcFridays = utcFriday.range;
+exports.utcFridays = utcFridays;
+const utcSaturdays = utcSaturday.range;
+exports.utcSaturdays = utcSaturdays;
 
-},{"./duration.js":506,"./interval.js":509}],522:[function(require,module,exports){
+},{"./duration.js":507,"./interval.js":510}],517:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
   value: true
 });
-exports.years = exports.default = void 0;
-var _interval = _interopRequireDefault(require("./interval.js"));
-function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
-var year = (0, _interval.default)(function (date) {
+exports.utcYears = exports.utcYear = exports.timeYears = exports.timeYear = void 0;
+var _interval = require("./interval.js");
+const timeYear = (0, _interval.timeInterval)(date => {
   date.setMonth(0, 1);
   date.setHours(0, 0, 0, 0);
-}, function (date, step) {
+}, (date, step) => {
   date.setFullYear(date.getFullYear() + step);
-}, function (start, end) {
+}, (start, end) => {
   return end.getFullYear() - start.getFullYear();
-}, function (date) {
+}, date => {
   return date.getFullYear();
 });
 
 // An optimized implementation for this simple case.
-year.every = function (k) {
-  return !isFinite(k = Math.floor(k)) || !(k > 0) ? null : (0, _interval.default)(function (date) {
+exports.timeYear = timeYear;
+timeYear.every = k => {
+  return !isFinite(k = Math.floor(k)) || !(k > 0) ? null : (0, _interval.timeInterval)(date => {
     date.setFullYear(Math.floor(date.getFullYear() / k) * k);
     date.setMonth(0, 1);
     date.setHours(0, 0, 0, 0);
-  }, function (date, step) {
+  }, (date, step) => {
     date.setFullYear(date.getFullYear() + step * k);
   });
 };
-var _default = year;
-exports.default = _default;
-var years = year.range;
-exports.years = years;
+const timeYears = timeYear.range;
+exports.timeYears = timeYears;
+const utcYear = (0, _interval.timeInterval)(date => {
+  date.setUTCMonth(0, 1);
+  date.setUTCHours(0, 0, 0, 0);
+}, (date, step) => {
+  date.setUTCFullYear(date.getUTCFullYear() + step);
+}, (start, end) => {
+  return end.getUTCFullYear() - start.getUTCFullYear();
+}, date => {
+  return date.getUTCFullYear();
+});
 
-},{"./interval.js":509}],523:[function(require,module,exports){
+// An optimized implementation for this simple case.
+exports.utcYear = utcYear;
+utcYear.every = k => {
+  return !isFinite(k = Math.floor(k)) || !(k > 0) ? null : (0, _interval.timeInterval)(date => {
+    date.setUTCFullYear(Math.floor(date.getUTCFullYear() / k) * k);
+    date.setUTCMonth(0, 1);
+    date.setUTCHours(0, 0, 0, 0);
+  }, (date, step) => {
+    date.setUTCFullYear(date.getUTCFullYear() + step * k);
+  });
+};
+const utcYears = utcYear.range;
+exports.utcYears = utcYears;
+
+},{"./interval.js":510}],518:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -24807,7 +24934,7 @@ var _timeout = _interopRequireDefault(require("./timeout.js"));
 var _interval = _interopRequireDefault(require("./interval.js"));
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./interval.js":524,"./timeout.js":525,"./timer.js":526}],524:[function(require,module,exports){
+},{"./interval.js":519,"./timeout.js":520,"./timer.js":521}],519:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -24832,7 +24959,7 @@ function _default(callback, delay, time) {
   return t;
 }
 
-},{"./timer.js":526}],525:[function(require,module,exports){
+},{"./timer.js":521}],520:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -24850,7 +24977,7 @@ function _default(callback, delay, time) {
   return t;
 }
 
-},{"./timer.js":526}],526:[function(require,module,exports){
+},{"./timer.js":521}],521:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -24969,7 +25096,7 @@ function sleep(time) {
   }
 }
 
-},{}],527:[function(require,module,exports){
+},{}],522:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -24994,7 +25121,7 @@ function _default(node, name) {
   return null;
 }
 
-},{"./transition/index.js":541,"./transition/schedule.js":546}],528:[function(require,module,exports){
+},{"./transition/index.js":536,"./transition/schedule.js":541}],523:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25024,7 +25151,7 @@ var _active = _interopRequireDefault(require("./active.js"));
 var _interrupt = _interopRequireDefault(require("./interrupt.js"));
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./active.js":527,"./interrupt.js":529,"./selection/index.js":530,"./transition/index.js":541}],529:[function(require,module,exports){
+},{"./active.js":522,"./interrupt.js":524,"./selection/index.js":525,"./transition/index.js":536}],524:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25054,7 +25181,7 @@ function _default(node, name) {
   if (empty) delete node.__transition;
 }
 
-},{"./transition/schedule.js":546}],530:[function(require,module,exports){
+},{"./transition/schedule.js":541}],525:[function(require,module,exports){
 "use strict";
 
 var _d3Selection = require("d3-selection");
@@ -25064,7 +25191,7 @@ function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { de
 _d3Selection.selection.prototype.interrupt = _interrupt.default;
 _d3Selection.selection.prototype.transition = _transition.default;
 
-},{"./interrupt.js":531,"./transition.js":532,"d3-selection":392}],531:[function(require,module,exports){
+},{"./interrupt.js":526,"./transition.js":527,"d3-selection":393}],526:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25079,7 +25206,7 @@ function _default(name) {
   });
 }
 
-},{"../interrupt.js":529}],532:[function(require,module,exports){
+},{"../interrupt.js":524}],527:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25124,7 +25251,7 @@ function _default(name) {
   return new _index.Transition(groups, this._parents, name, id);
 }
 
-},{"../transition/index.js":541,"../transition/schedule.js":546,"d3-ease":115,"d3-timer":523}],533:[function(require,module,exports){
+},{"../transition/index.js":536,"../transition/schedule.js":541,"d3-ease":116,"d3-timer":518}],528:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25194,7 +25321,7 @@ function _default(name, value) {
   return this.attrTween(name, typeof value === "function" ? (fullname.local ? attrFunctionNS : attrFunction)(fullname, i, (0, _tween.tweenValue)(this, "attr." + name, value)) : value == null ? (fullname.local ? attrRemoveNS : attrRemove)(fullname) : (fullname.local ? attrConstantNS : attrConstant)(fullname, i, value));
 }
 
-},{"./interpolate.js":542,"./tween.js":555,"d3-interpolate":260,"d3-selection":392}],534:[function(require,module,exports){
+},{"./interpolate.js":537,"./tween.js":550,"d3-interpolate":261,"d3-selection":393}],529:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25241,7 +25368,7 @@ function _default(name, value) {
   return this.tween(key, (fullname.local ? attrTweenNS : attrTween)(fullname, value));
 }
 
-},{"d3-selection":392}],535:[function(require,module,exports){
+},{"d3-selection":393}],530:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25264,7 +25391,7 @@ function _default(value) {
   return arguments.length ? this.each((typeof value === "function" ? delayFunction : delayConstant)(id, value)) : (0, _schedule.get)(this.node(), id).delay;
 }
 
-},{"./schedule.js":546}],536:[function(require,module,exports){
+},{"./schedule.js":541}],531:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25287,7 +25414,7 @@ function _default(value) {
   return arguments.length ? this.each((typeof value === "function" ? durationFunction : durationConstant)(id, value)) : (0, _schedule.get)(this.node(), id).duration;
 }
 
-},{"./schedule.js":546}],537:[function(require,module,exports){
+},{"./schedule.js":541}],532:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25306,7 +25433,7 @@ function _default(value) {
   return arguments.length ? this.each(easeConstant(id, value)) : (0, _schedule.get)(this.node(), id).ease;
 }
 
-},{"./schedule.js":546}],538:[function(require,module,exports){
+},{"./schedule.js":541}],533:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25326,7 +25453,7 @@ function _default(value) {
   return this.each(easeVarying(this._id, value));
 }
 
-},{"./schedule.js":546}],539:[function(require,module,exports){
+},{"./schedule.js":541}],534:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25370,7 +25497,7 @@ function _default() {
   });
 }
 
-},{"./schedule.js":546}],540:[function(require,module,exports){
+},{"./schedule.js":541}],535:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25391,7 +25518,7 @@ function _default(match) {
   return new _index.Transition(subgroups, this._parents, this._name, this._id);
 }
 
-},{"./index.js":541,"d3-selection":392}],541:[function(require,module,exports){
+},{"./index.js":536,"d3-selection":393}],536:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25469,7 +25596,7 @@ Transition.prototype = transition.prototype = {
   [Symbol.iterator]: selection_prototype[Symbol.iterator]
 };
 
-},{"./attr.js":533,"./attrTween.js":534,"./delay.js":535,"./duration.js":536,"./ease.js":537,"./easeVarying.js":538,"./end.js":539,"./filter.js":540,"./merge.js":543,"./on.js":544,"./remove.js":545,"./select.js":547,"./selectAll.js":548,"./selection.js":549,"./style.js":550,"./styleTween.js":551,"./text.js":552,"./textTween.js":553,"./transition.js":554,"./tween.js":555,"d3-selection":392}],542:[function(require,module,exports){
+},{"./attr.js":528,"./attrTween.js":529,"./delay.js":530,"./duration.js":531,"./ease.js":532,"./easeVarying.js":533,"./end.js":534,"./filter.js":535,"./merge.js":538,"./on.js":539,"./remove.js":540,"./select.js":542,"./selectAll.js":543,"./selection.js":544,"./style.js":545,"./styleTween.js":546,"./text.js":547,"./textTween.js":548,"./transition.js":549,"./tween.js":550,"d3-selection":393}],537:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25483,7 +25610,7 @@ function _default(a, b) {
   return (typeof b === "number" ? _d3Interpolate.interpolateNumber : b instanceof _d3Color.color ? _d3Interpolate.interpolateRgb : (c = (0, _d3Color.color)(b)) ? (b = c, _d3Interpolate.interpolateRgb) : _d3Interpolate.interpolateString)(a, b);
 }
 
-},{"d3-color":79,"d3-interpolate":260}],543:[function(require,module,exports){
+},{"d3-color":80,"d3-interpolate":261}],538:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25506,7 +25633,7 @@ function _default(transition) {
   return new _index.Transition(merges, this._parents, this._name, this._id);
 }
 
-},{"./index.js":541}],544:[function(require,module,exports){
+},{"./index.js":536}],539:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25541,7 +25668,7 @@ function _default(name, listener) {
   return arguments.length < 2 ? (0, _schedule.get)(this.node(), id).on.on(name) : this.each(onFunction(id, name, listener));
 }
 
-},{"./schedule.js":546}],545:[function(require,module,exports){
+},{"./schedule.js":541}],540:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25559,7 +25686,7 @@ function _default() {
   return this.on("end.remove", removeFunction(this._id));
 }
 
-},{}],546:[function(require,module,exports){
+},{}],541:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25719,7 +25846,7 @@ function create(node, id, self) {
   }
 }
 
-},{"d3-dispatch":97,"d3-timer":523}],547:[function(require,module,exports){
+},{"d3-dispatch":98,"d3-timer":518}],542:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25747,7 +25874,7 @@ function _default(select) {
   return new _index.Transition(subgroups, this._parents, name, id);
 }
 
-},{"./index.js":541,"./schedule.js":546,"d3-selection":392}],548:[function(require,module,exports){
+},{"./index.js":536,"./schedule.js":541,"d3-selection":393}],543:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25779,7 +25906,7 @@ function _default(select) {
   return new _index.Transition(subgroups, parents, name, id);
 }
 
-},{"./index.js":541,"./schedule.js":546,"d3-selection":392}],549:[function(require,module,exports){
+},{"./index.js":536,"./schedule.js":541,"d3-selection":393}],544:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25792,7 +25919,7 @@ function _default() {
   return new Selection(this._groups, this._parents);
 }
 
-},{"d3-selection":392}],550:[function(require,module,exports){
+},{"d3-selection":393}],545:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25861,7 +25988,7 @@ function _default(name, value, priority) {
   return value == null ? this.styleTween(name, styleNull(name, i)).on("end.style." + name, styleRemove(name)) : typeof value === "function" ? this.styleTween(name, styleFunction(name, i, (0, _tween.tweenValue)(this, "style." + name, value))).each(styleMaybeRemove(this._id, name)) : this.styleTween(name, styleConstant(name, i, value), priority).on("end.style." + name, null);
 }
 
-},{"./interpolate.js":542,"./schedule.js":546,"./tween.js":555,"d3-interpolate":260,"d3-selection":392}],551:[function(require,module,exports){
+},{"./interpolate.js":537,"./schedule.js":541,"./tween.js":550,"d3-interpolate":261,"d3-selection":393}],546:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25891,7 +26018,7 @@ function _default(name, value, priority) {
   return this.tween(key, styleTween(name, value, priority == null ? "" : priority));
 }
 
-},{}],552:[function(require,module,exports){
+},{}],547:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25914,7 +26041,7 @@ function _default(value) {
   return this.tween("text", typeof value === "function" ? textFunction((0, _tween.tweenValue)(this, "text", value)) : textConstant(value == null ? "" : value + ""));
 }
 
-},{"./tween.js":555}],553:[function(require,module,exports){
+},{"./tween.js":550}],548:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25944,7 +26071,7 @@ function _default(value) {
   return this.tween(key, textTween(value));
 }
 
-},{}],554:[function(require,module,exports){
+},{}],549:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -25975,7 +26102,7 @@ function _default() {
   return new _index.Transition(groups, this._parents, name, id1);
 }
 
-},{"./index.js":541,"./schedule.js":546}],555:[function(require,module,exports){
+},{"./index.js":536,"./schedule.js":541}],550:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -26057,9 +26184,9 @@ function tweenValue(transition, name, value) {
   };
 }
 
-},{"./schedule.js":546}],556:[function(require,module,exports){
-arguments[4][66][0].apply(exports,arguments)
-},{"dup":66}],557:[function(require,module,exports){
+},{"./schedule.js":541}],551:[function(require,module,exports){
+arguments[4][67][0].apply(exports,arguments)
+},{"dup":67}],552:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -26099,7 +26226,7 @@ function ZoomEvent(type, {
   });
 }
 
-},{}],558:[function(require,module,exports){
+},{}],553:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -26135,9 +26262,9 @@ function _getRequireWildcardCache(nodeInterop) { if (typeof WeakMap !== "functio
 function _interopRequireWildcard(obj, nodeInterop) { if (!nodeInterop && obj && obj.__esModule) { return obj; } if (obj === null || typeof obj !== "object" && typeof obj !== "function") { return { default: obj }; } var cache = _getRequireWildcardCache(nodeInterop); if (cache && cache.has(obj)) { return cache.get(obj); } var newObj = {}; var hasPropertyDescriptor = Object.defineProperty && Object.getOwnPropertyDescriptor; for (var key in obj) { if (key !== "default" && Object.prototype.hasOwnProperty.call(obj, key)) { var desc = hasPropertyDescriptor ? Object.getOwnPropertyDescriptor(obj, key) : null; if (desc && (desc.get || desc.set)) { Object.defineProperty(newObj, key, desc); } else { newObj[key] = obj[key]; } } } newObj.default = obj; if (cache) { cache.set(obj, newObj); } return newObj; }
 function _interopRequireDefault(obj) { return obj && obj.__esModule ? obj : { default: obj }; }
 
-},{"./transform.js":560,"./zoom.js":561}],559:[function(require,module,exports){
-arguments[4][69][0].apply(exports,arguments)
-},{"dup":69}],560:[function(require,module,exports){
+},{"./transform.js":555,"./zoom.js":556}],554:[function(require,module,exports){
+arguments[4][70][0].apply(exports,arguments)
+},{"dup":70}],555:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -26195,7 +26322,7 @@ function transform(node) {
   return node.__zoom;
 }
 
-},{}],561:[function(require,module,exports){
+},{}],556:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -26591,7 +26718,7 @@ function _default() {
   return zoom;
 }
 
-},{"./constant.js":556,"./event.js":557,"./noevent.js":559,"./transform.js":560,"d3-dispatch":97,"d3-drag":101,"d3-interpolate":260,"d3-selection":392,"d3-transition":528}],562:[function(require,module,exports){
+},{"./constant.js":551,"./event.js":552,"./noevent.js":554,"./transform.js":555,"d3-dispatch":98,"d3-drag":102,"d3-interpolate":261,"d3-selection":393,"d3-transition":523}],557:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -26928,7 +27055,7 @@ Object.keys(_d3Zoom).forEach(function (key) {
   });
 });
 
-},{"d3-array":24,"d3-axis":64,"d3-brush":68,"d3-chord":73,"d3-color":79,"d3-contour":89,"d3-delaunay":92,"d3-dispatch":97,"d3-drag":101,"d3-dsv":107,"d3-ease":115,"d3-fetch":125,"d3-force":132,"d3-format":152,"d3-geo":176,"d3-hierarchy":233,"d3-interpolate":260,"d3-path":275,"d3-polygon":282,"d3-quadtree":289,"d3-random":308,"d3-scale":370,"d3-scale-chromatic":339,"d3-selection":392,"d3-shape":465,"d3-time":508,"d3-time-format":501,"d3-timer":523,"d3-transition":528,"d3-zoom":558}],563:[function(require,module,exports){
+},{"d3-array":25,"d3-axis":65,"d3-brush":69,"d3-chord":74,"d3-color":80,"d3-contour":90,"d3-delaunay":93,"d3-dispatch":98,"d3-drag":102,"d3-dsv":108,"d3-ease":116,"d3-fetch":126,"d3-force":133,"d3-format":153,"d3-geo":177,"d3-hierarchy":234,"d3-interpolate":261,"d3-path":276,"d3-polygon":283,"d3-quadtree":290,"d3-random":309,"d3-scale":371,"d3-scale-chromatic":340,"d3-selection":393,"d3-shape":466,"d3-time":509,"d3-time-format":502,"d3-timer":518,"d3-transition":523,"d3-zoom":553}],558:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -27372,7 +27499,7 @@ function defaultGetY(p) {
   return p[1];
 }
 
-},{"robust-predicates":570}],564:[function(require,module,exports){
+},{"robust-predicates":565}],559:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -27461,7 +27588,7 @@ function keyof(value) {
   return value !== null && typeof value === "object" ? value.valueOf() : value;
 }
 
-},{}],565:[function(require,module,exports){
+},{}],560:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -28130,7 +28257,7 @@ function incirclefast(ax, ay, bx, by, cx, cy, dx, dy) {
   return alift * bcdet + blift * cadet + clift * abdet;
 }
 
-},{"./util.js":569}],566:[function(require,module,exports){
+},{"./util.js":564}],561:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -28835,7 +28962,7 @@ function inspherefast(pax, pay, paz, pbx, pby, pbz, pcx, pcy, pcz, pdx, pdy, pdz
   return clift * dab - dlift * abc + (alift * bcd - blift * cda);
 }
 
-},{"./util.js":569}],567:[function(require,module,exports){
+},{"./util.js":564}],562:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -29012,7 +29139,7 @@ function orient2dfast(ax, ay, bx, by, cx, cy) {
   return (ay - cy) * (bx - cx) - (ax - cx) * (by - cy);
 }
 
-},{"./util.js":569}],568:[function(require,module,exports){
+},{"./util.js":564}],563:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -29436,7 +29563,7 @@ function orient3dfast(ax, ay, az, bx, by, bz, cx, cy, cz, dx, dy, dz) {
   return adx * (bdy * cdz - bdz * cdy) + bdx * (cdy * adz - cdz * ady) + cdx * (ady * bdz - adz * bdy);
 }
 
-},{"./util.js":569}],569:[function(require,module,exports){
+},{"./util.js":564}],564:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -29588,7 +29715,7 @@ function vec(n) {
   return new Float64Array(n);
 }
 
-},{}],570:[function(require,module,exports){
+},{}],565:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -29647,7 +29774,7 @@ var _orient3d = require("./esm/orient3d.js");
 var _incircle = require("./esm/incircle.js");
 var _insphere = require("./esm/insphere.js");
 
-},{"./esm/incircle.js":565,"./esm/insphere.js":566,"./esm/orient2d.js":567,"./esm/orient3d.js":568}],571:[function(require,module,exports){
+},{"./esm/incircle.js":560,"./esm/insphere.js":561,"./esm/orient2d.js":562,"./esm/orient3d.js":563}],566:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -29663,7 +29790,7 @@ function _interopRequireDefault(obj) {
 var _default = _neo4jd.default;
 exports.default = _default;
 
-},{"./scripts/neo4jd3":573}],572:[function(require,module,exports){
+},{"./scripts/neo4jd3":568}],567:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -30308,7 +30435,7 @@ var _default = {
 };
 exports.default = _default;
 
-},{}],573:[function(require,module,exports){
+},{}],568:[function(require,module,exports){
 "use strict";
 
 Object.defineProperty(exports, "__esModule", {
@@ -30317,6 +30444,7 @@ Object.defineProperty(exports, "__esModule", {
 exports.default = void 0;
 var d3 = _interopRequireWildcard(require("d3"));
 var _fontAwesomeIcons = _interopRequireDefault(require("./fontAwesomeIcons"));
+var _d3ContextMenu = _interopRequireDefault(require("@targetpackage/d3-context-menu"));
 function _interopRequireDefault(obj) {
   return obj && obj.__esModule ? obj : {
     default: obj
@@ -30400,7 +30528,9 @@ class Neo4jD3 {
       nodeTextColor: "#ffffff",
       relationshipColor: "#a5abb6",
       zoomFit: false,
-      showNullProperties: false
+      showNullProperties: false,
+      contextMenu: false,
+      contextMenuItems: []
     };
     this.init(_selector, _options);
   }
@@ -30535,6 +30665,11 @@ class Neo4jD3 {
       }
       if (typeof this.options.onNodeMouseLeave === "function") {
         this.options.onNodeMouseLeave(d);
+      }
+    }).on("contextmenu", (event, d) => {
+      if (this.options.contextMenu) {
+        event.preventDefault();
+        this.contextMenu(d);
       }
     }).call(d3.drag().on("start", this.dragStarted.bind(this)).on("drag", this.dragged.bind(this)).on("end", this.dragEnded.bind(this)));
   }
@@ -31219,8 +31354,11 @@ class Neo4jD3 {
   toString(d) {
     let s = d.labels ? d.labels[0] : d.type;
     s += ` (<id>: ${d.id}`;
-    Object.keys(d.properties).forEach(function (property) {
-      s += `, ${property}: ${JSON.stringify(d.properties[property])}`;
+    Object.keys(d.properties).forEach(property => {
+      const value = d.properties[property];
+      if (this.options.showNullProperties || Boolean(value)) {
+        s += `, ${property}: ${JSON.stringify(value)}`;
+      }
     });
     s += ")";
     return s;
@@ -31311,9 +31449,29 @@ class Neo4jD3 {
     this.svgTranslate = [fullWidth / 2 - this.svgScale * midX, fullHeight / 2 - this.svgScale * midY];
     this.svg.attr("transform", `translate(${this.svgTranslate[0]}, ${this.svgTranslate[1]}) scale(${this.svgScale})`);
   }
+  contextMenu(node) {
+    const menu = this.options.contextMenuItems;
+    // TODO
+    const menuItems = menu.map(item => {
+      return {
+        title: item.title,
+        action: () => {
+          item.action(node);
+        }
+      };
+    });
+    const menuOptions = {
+      menuItems: menuItems,
+      onMenuClose: () => {
+        this.svg.selectAll(".node").classed("selected", false);
+      }
+    };
+    console.log("Menu options: ", menuOptions);
+    (0, _d3ContextMenu.default)(menuOptions);
+  }
 }
 var _default = Neo4jD3;
 exports.default = _default;
 
-},{"./fontAwesomeIcons":572,"d3":562}]},{},[571])(571)
+},{"./fontAwesomeIcons":567,"@targetpackage/d3-context-menu":1,"d3":557}]},{},[566])(566)
 });

@@ -2,6 +2,8 @@
 
 import * as d3 from "d3";
 import fontAwesomeIcons from "./fontAwesomeIcons";
+import ContextMenu from "@targetpackage/d3-context-menu";
+import "@targetpackage/d3-context-menu/css/d3-context-menu.css";
 
 class Neo4jD3 {
 	constructor(_selector, _options) {
@@ -43,6 +45,7 @@ class Neo4jD3 {
 			relationshipColor: "#a5abb6",
 			zoomFit: false,
 			showNullProperties: false,
+			contextMenuItems: [],
 		};
 
 		this.init(_selector, _options);
@@ -159,15 +162,15 @@ class Neo4jD3 {
 					return this.options.nodeOutlineFillColor
 						? this.options.nodeOutlineFillColor
 						: isNode
-						? this.class2color(property)
-						: this.defaultColor();
+							? this.class2color(property)
+							: this.defaultColor();
 				})
 				.style("border-color", (_d) => {
 					return this.options.nodeOutlineFillColor
 						? this.class2darkenColor(this.options.nodeOutlineFillColor)
 						: isNode
-						? this.class2darkenColor(property)
-						: this.defaultDarkenColor();
+							? this.class2darkenColor(property)
+							: this.defaultDarkenColor();
 				})
 				.style("color", (_d) => {
 					return this.options.nodeOutlineFillColor
@@ -250,6 +253,12 @@ class Neo4jD3 {
 
 				if (typeof this.options.onNodeMouseLeave === "function") {
 					this.options.onNodeMouseLeave(d);
+				}
+			})
+			.on("contextmenu", (event, d) => {
+				if (this.options.contextMenuItems.length > 0) {
+					event.preventDefault();
+					this.contextMenu(event, d);
 				}
 			})
 			.call(
@@ -1165,8 +1174,11 @@ class Neo4jD3 {
 		let s = d.labels ? d.labels[0] : d.type;
 		s += ` (<id>: ${d.id}`;
 
-		Object.keys(d.properties).forEach(function (property) {
-			s += `, ${property}: ${JSON.stringify(d.properties[property])}`;
+		Object.keys(d.properties).forEach((property) => {
+			const value = d.properties[property];
+			if (this.options.showNullProperties || Boolean(value)) {
+				s += `, ${property}: ${JSON.stringify(value)}`;
+			}
 		});
 
 		s += ")";
@@ -1283,6 +1295,22 @@ class Neo4jD3 {
 			"transform",
 			`translate(${this.svgTranslate[0]}, ${this.svgTranslate[1]}) scale(${this.svgScale})`
 		);
+	}
+
+	contextMenu(event, data) {
+		const menuItems = this.options.contextMenuItems.map((item) => {
+			return {
+				title: item.title,
+				action: () => {
+					item.action(data, event);
+				}
+			};
+		});
+
+		const menuOptions = {};
+
+		const openMenu = ContextMenu(menuItems, menuOptions);
+		openMenu(event, data);
 	}
 }
 
